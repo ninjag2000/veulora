@@ -66,12 +66,12 @@ export function PaywallCarousel({ assets }: { assets: string[] }) {
             left: theme.spacing.l + columnIndex * (columnWidth + 12),
             transform: [
               {
-                  translateY: value.interpolate({
-                    inputRange: [-1, 0, 1],
-                    outputRange: [10, 0, -14],
-                  }),
-                },
-              ],
+                translateY: value.interpolate({
+                  inputRange: [-1, 0, 1],
+                  outputRange: [10, 0, -14],
+                }),
+              },
+            ],
           }}
         >
           {rows.map((row, rowIndex) => {
