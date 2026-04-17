@@ -18,12 +18,12 @@ export function PaywallCarousel({ assets }: { assets: string[] }) {
         Animated.sequence([
           Animated.timing(value, {
             toValue: index % 2 === 0 ? 1 : -1,
-            duration: 14000 + index * 1800,
+            duration: 22000 + index * 2400,
             useNativeDriver: true,
           }),
           Animated.timing(value, {
             toValue: 0,
-            duration: 14000 + index * 1800,
+            duration: 22000 + index * 2400,
             useNativeDriver: true,
           }),
         ])
@@ -66,12 +66,12 @@ export function PaywallCarousel({ assets }: { assets: string[] }) {
             left: theme.spacing.l + columnIndex * (columnWidth + 12),
             transform: [
               {
-                translateY: value.interpolate({
-                  inputRange: [-1, 0, 1],
-                  outputRange: [18, 0, -22],
-                }),
-              },
-            ],
+                  translateY: value.interpolate({
+                    inputRange: [-1, 0, 1],
+                    outputRange: [10, 0, -14],
+                  }),
+                },
+              ],
           }}
         >
           {rows.map((row, rowIndex) => {
