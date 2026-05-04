@@ -1,61 +1,142 @@
 import * as ImagePicker from "expo-image-picker";
-import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useState } from "react";
-import { Alert, Text, View } from "react-native";
+import { useEffect, useState } from "react";
+import { useWindowDimensions, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { GuidelinesModal } from "@/components/guidelines-modal";
-import { PromptComposer, ReferenceImageCard } from "@/components/generator-controls";
+import { PhotoSourceSheet } from "@/components/photo-source-sheet";
 import { PrimaryButton } from "@/components/primary-button";
 import { Screen } from "@/components/screen";
-import { TopBar } from "@/components/top-bar";
-import { findTemplateById } from "@/lib/catalog";
+import {
+  EffectRow,
+  PresetGeneratorHeader,
+  PromptInput,
+  RequiredImageDropzone,
+  ResolutionSelector,
+} from "@/components/upload-first-controls";
+import { findTemplateByIdWithContentLabFallback } from "@/lib/catalog";
 import { formatCredits } from "@/lib/helpers";
 import { theme } from "@/lib/theme";
+import type { VideoResolution } from "@/lib/types";
 import { useAppState } from "@/providers/app-provider";
+import {
+  prepareReferenceImage,
+  ReferenceImageError,
+} from "@/services/reference-image-service";
 
-export function VideoGeneratorScreen() {
+interface VideoGeneratorScreenProps {
+  presetIdOverride?: string;
+}
+
+export function VideoGeneratorScreen({
+  presetIdOverride,
+}: VideoGeneratorScreenProps = {}) {
   const router = useRouter();
   const params = useLocalSearchParams<{ presetId: string }>();
   const {
     catalog,
     createGeneration,
     entitlements,
-    markVideoGuidelinesSeen,
     pushToast,
-    settings,
   } = useAppState();
-  const preset = catalog ? findTemplateById(catalog, params.presetId) : null;
-  const [referenceImageUri, setReferenceImageUri] = useState<string | undefined>();
+  const requestedPresetId = presetIdOverride ?? params.presetId;
+  const preset = catalog
+    ? findTemplateByIdWithContentLabFallback(
+        catalog,
+        requestedPresetId,
+        "video"
+      ) ?? null
+    : null;
   const [prompt, setPrompt] = useState(preset?.defaultPrompt ?? "");
+  const [referenceImageUri, setReferenceImageUri] = useState<string | undefined>();
+  const [referenceImageError, setReferenceImageError] = useState<string | undefined>();
+  const [resolution, setResolution] = useState<VideoResolution>("720p");
   const [loading, setLoading] = useState(false);
-  const [showGuidelines, setShowGuidelines] = useState(!settings.videoGuidelinesSeen);
+  const [sourceSheetVisible, setSourceSheetVisible] = useState(false);
+  const { height: screenHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+
+  useEffect(() => {
+    if (!entitlements.isPro && resolution !== "720p") {
+      setResolution("720p");
+    }
+  }, [entitlements.isPro, resolution]);
+
+  useEffect(() => {
+    if (preset) {
+      setPrompt(preset.defaultPrompt);
+    }
+  }, [preset?.id]);
 
   if (!preset || !catalog) {
     return null;
   }
 
-  const pickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: "images",
-      quality: 1,
-    });
+  const isVideoContentLab = preset.id === "content-lab-video";
+  const topPadding = Math.max(insets.top + 8, theme.spacing.l);
+  const bottomPadding = Math.max(insets.bottom + 12, theme.spacing.m);
+  const promptMinHeight = isVideoContentLab ? 196 : undefined;
+  const uploadHeight = Math.max(
+    isVideoContentLab ? 124 : 184,
+    Math.min(
+      isVideoContentLab ? 148 : 286,
+      screenHeight -
+        topPadding -
+        bottomPadding -
+        52 -
+        76 -
+        58 -
+        (isVideoContentLab ? 118 : 48)
+    )
+  );
+
+  const pickImage = async (source: "camera" | "library") => {
+    const result =
+      source === "camera"
+        ? await ImagePicker.launchCameraAsync({ mediaTypes: "images", quality: 1 })
+        : await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: "images",
+            quality: 1,
+          });
 
     if (!result.canceled) {
-      setReferenceImageUri(result.assets[0]?.uri);
+      const asset = result.assets[0];
+
+      if (!asset) {
+        return;
+      }
+
+      try {
+        setReferenceImageError(undefined);
+        const prepared = await prepareReferenceImage(asset, {
+          minSide: entitlements.isPro ? 360 : 720,
+          referenceMode: preset.referenceMode,
+        });
+        setReferenceImageUri(prepared.uri);
+      } catch (error) {
+        const message =
+          error instanceof ReferenceImageError
+            ? error.message
+            : "Could not prepare this image.";
+        setReferenceImageUri(undefined);
+        setReferenceImageError(message);
+        pushToast(message);
+      }
     }
   };
 
   const handlePick = () => {
-    Alert.alert("Choose photo", "Upload a clear front-facing portrait.", [
-      { text: "Choose photo", onPress: () => void pickImage() },
-      { text: "Cancel", style: "cancel" },
-    ]);
+    setSourceSheetVisible(true);
+  };
+
+  const handlePickSource = (source: "camera" | "library") => {
+    setSourceSheetVisible(false);
+    void pickImage(source);
   };
 
   const handleGenerate = async () => {
-    if (!referenceImageUri) {
-      pushToast("Choose a person photo first.");
+    if (!isVideoContentLab && !referenceImageUri) {
+      pushToast(referenceImageError ?? "Add an image to continue.");
       return;
     }
 
@@ -65,6 +146,7 @@ export function VideoGeneratorScreen() {
         templateId: preset.id,
         prompt,
         referenceImageUri,
+        resolution: entitlements.isPro ? resolution : "720p",
       });
 
       if (result.kind === "error") {
@@ -73,7 +155,13 @@ export function VideoGeneratorScreen() {
       }
 
       if (result.kind === "paywall") {
-        router.push(`/paywall?mode=soft&source=${result.source}`);
+        const returnTo =
+          preset.id === "content-lab-video"
+            ? "/video-content-lab"
+            : `/video-generator/${preset.id}`;
+        router.push(
+          `/paywall?mode=soft&source=${result.source}&returnTo=${encodeURIComponent(returnTo)}`
+        );
         return;
       }
 
@@ -85,71 +173,83 @@ export function VideoGeneratorScreen() {
 
   return (
     <>
-      <GuidelinesModal
-        visible={showGuidelines}
-        content={catalog.photoGuidelines}
-        onContinue={() => {
-          setShowGuidelines(false);
-          markVideoGuidelinesSeen();
-        }}
+      <PhotoSourceSheet
+        visible={sourceSheetVisible}
+        title="Choose photo"
+        subtitle="Upload a clear front-facing portrait from your camera or photo library."
+        showCamera
+        onCamera={() => handlePickSource("camera")}
+        onLibrary={() => handlePickSource("library")}
+        onClose={() => setSourceSheetVisible(false)}
       />
 
       <Screen
-        footer={
+        scrollable={false}
+        contentContainerStyle={{
+          paddingTop: topPadding,
+          paddingBottom: bottomPadding,
+          gap: 12,
+        }}
+      >
+        <PresetGeneratorHeader title={preset.title} onBack={() => router.back()} />
+
+        <RequiredImageDropzone
+          imageUri={referenceImageUri}
+          onPress={handlePick}
+          errorText={referenceImageError}
+          title={isVideoContentLab ? "Add Reference Image" : "Add Your Image"}
+          placeholderText={isVideoContentLab ? "Optional" : "Required"}
+          height={uploadHeight}
+        />
+
+        <View
+          style={{
+            gap: 12,
+            padding: theme.spacing.m,
+            borderRadius: theme.radii.xl,
+            backgroundColor: theme.colors.bg.glass,
+            borderWidth: 1,
+            borderColor: theme.colors.border.subtle,
+            boxShadow: theme.shadows.soft,
+          }}
+        >
+          {isVideoContentLab ? (
+            <PromptInput
+              value={prompt}
+              onChangeText={setPrompt}
+              compact
+              minHeight={promptMinHeight}
+            />
+          ) : (
+            <EffectRow template={preset} compact />
+          )}
+
+          <ResolutionSelector
+            value={entitlements.isPro ? resolution : "720p"}
+            onChange={setResolution}
+            compact
+            premiumLocked={!entitlements.isPro}
+            economyResolution="720p"
+            options={entitlements.isPro ? undefined : ["720p", "1080p"]}
+            onPremiumPress={() =>
+              router.push(
+                `/paywall?mode=soft&source=video_generation&returnTo=${encodeURIComponent(
+                  preset.id === "content-lab-video"
+                    ? "/video-content-lab"
+                    : `/video-generator/${preset.id}`
+                )}`
+              )
+            }
+          />
+        </View>
+
+        <View style={{ marginTop: "auto" }}>
           <PrimaryButton
             label={loading ? "Generating..." : `Generate for ${formatCredits(preset.generationCost)}`}
             loading={loading}
             onPress={handleGenerate}
           />
-        }
-      >
-        <TopBar
-          showBack
-          onBack={() => router.back()}
-          showBrand={false}
-          title={preset.title}
-          credits={entitlements.currentCredits}
-          onPressPro={() => router.push("/paywall?mode=soft&source=video_generation")}
-          onPressSettings={() => router.push("/settings")}
-        />
-
-        <View
-          style={{
-            height: 260,
-            borderRadius: theme.radii.xl,
-            overflow: "hidden",
-            borderWidth: 1,
-            borderColor: theme.colors.border.subtle,
-            backgroundColor: theme.colors.bg.surface,
-          }}
-        >
-          <Image source={preset.coverUrl} contentFit="cover" style={{ width: "100%", height: "100%" }} />
         </View>
-
-        <Text
-          selectable
-          style={{
-            color: theme.colors.text.secondary,
-            fontSize: theme.typography.body,
-            lineHeight: 22,
-          }}
-        >
-          Upload a clear photo of one person. We will animate it with the {preset.motionPreset} motion preset.
-        </Text>
-
-        <PromptComposer
-          value={prompt}
-          onChangeText={setPrompt}
-          placeholder="Add optional motion guidance."
-        />
-
-        <ReferenceImageCard
-          title="Person photo"
-          hint="Use a bright, front-facing photo with one visible face."
-          imageUri={referenceImageUri}
-          onPick={handlePick}
-          onDelete={() => setReferenceImageUri(undefined)}
-        />
       </Screen>
     </>
   );

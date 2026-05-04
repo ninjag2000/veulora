@@ -1,4 +1,5 @@
 import type { PropsWithChildren, ReactNode } from "react";
+import { Image } from "expo-image";
 import {
   KeyboardAvoidingView,
   ScrollView,
@@ -6,13 +7,18 @@ import {
   type ViewStyle,
   View,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 
 import { theme } from "@/lib/theme";
+
+const appBackgroundImage = require("../assets/photo-generated/app-background-v4.png");
 
 interface ScreenProps extends PropsWithChildren {
   scrollable?: boolean;
   contentContainerStyle?: StyleProp<ViewStyle>;
   footer?: ReactNode;
+  footerCard?: boolean;
+  background?: "app" | "none";
 }
 
 export function Screen({
@@ -20,6 +26,8 @@ export function Screen({
   scrollable = true,
   contentContainerStyle,
   footer,
+  footerCard = true,
+  background = "app",
 }: ScreenProps) {
   const content = scrollable ? (
     <ScrollView
@@ -30,8 +38,8 @@ export function Screen({
         {
           paddingHorizontal: theme.spacing.l,
           paddingTop: theme.spacing.l,
-          paddingBottom: 140,
-          gap: theme.spacing.l,
+          paddingBottom: 160,
+          gap: theme.spacing.xl,
         },
         contentContainerStyle,
       ]}
@@ -46,7 +54,7 @@ export function Screen({
           flex: 1,
           paddingHorizontal: theme.spacing.l,
           paddingTop: theme.spacing.l,
-          gap: theme.spacing.l,
+          gap: theme.spacing.xl,
         },
         contentContainerStyle,
       ]}
@@ -59,38 +67,56 @@ export function Screen({
     <View
       style={{
         flex: 1,
-        backgroundColor: theme.colors.bg.app,
+        backgroundColor:
+          background === "app" ? theme.colors.bg.app : "transparent",
       }}
     >
-      <View
-        pointerEvents="none"
-        style={{
-          position: "absolute",
-          top: -140,
-          right: -80,
-          width: 260,
-          height: 260,
-          borderRadius: 260,
-          backgroundColor: "rgba(200, 107, 255, 0.20)",
-          opacity: 0.7,
-        }}
-      />
-      <View
-        pointerEvents="none"
-        style={{
-          position: "absolute",
-          bottom: 120,
-          left: -80,
-          width: 220,
-          height: 220,
-          borderRadius: 220,
-          backgroundColor: "rgba(255, 143, 216, 0.10)",
-        }}
-      />
+      {background === "app" ? (
+        <>
+          <Image
+            source={appBackgroundImage}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            transition={0}
+            style={{ position: "absolute", inset: 0 }}
+          />
+
+          <LinearGradient
+            colors={[
+              "rgba(9, 7, 11, 0.82)",
+              "rgba(12, 9, 14, 0.70)",
+              "rgba(9, 7, 11, 0.88)",
+            ]}
+            style={{ position: "absolute", inset: 0 }}
+          />
+        </>
+      ) : null}
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
         {content}
       </KeyboardAvoidingView>
+
+      {footer ? (
+        <View
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: 132,
+          }}
+        >
+          <LinearGradient
+            colors={[
+              "rgba(9, 7, 11, 0)",
+              "rgba(9, 7, 11, 0.72)",
+              "rgba(9, 7, 11, 0.96)",
+            ]}
+            style={{ flex: 1 }}
+          />
+        </View>
+      ) : null}
 
       {footer ? (
         <View
@@ -99,6 +125,16 @@ export function Screen({
             left: theme.spacing.l,
             right: theme.spacing.l,
             bottom: 16,
+            ...(footerCard
+              ? {
+                  padding: 8,
+                  borderRadius: theme.radii.xl,
+                  backgroundColor: theme.colors.bg.glass,
+                  borderWidth: 1,
+                  borderColor: theme.colors.border.subtle,
+                  boxShadow: theme.shadows.soft,
+                }
+              : {}),
           }}
         >
           {footer}

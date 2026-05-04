@@ -1,32 +1,29 @@
 import { Image } from "expo-image";
 import { useEffect, useRef } from "react";
-import { Animated, useWindowDimensions, View } from "react-native";
+import { Animated, Easing, useWindowDimensions, View } from "react-native";
 
+import { resolveImageSource } from "@/lib/helpers";
 import { theme } from "@/lib/theme";
+import type { TemplateImageSource } from "@/lib/types";
 
-export function PaywallCarousel({ assets }: { assets: string[] }) {
+export function PaywallCarousel({ assets }: { assets: TemplateImageSource[] }) {
   const { width, height } = useWindowDimensions();
-  const columns = useRef([
+  const animationDurationMs = 14000;
+  const progress = useRef([
     new Animated.Value(0),
     new Animated.Value(0),
     new Animated.Value(0),
   ]).current;
 
   useEffect(() => {
-    const animations = columns.map((value, index) =>
+    const animations = progress.map((value) =>
       Animated.loop(
-        Animated.sequence([
-          Animated.timing(value, {
-            toValue: index % 2 === 0 ? 1 : -1,
-            duration: 14000 + index * 1800,
-            useNativeDriver: true,
-          }),
-          Animated.timing(value, {
-            toValue: 0,
-            duration: 14000 + index * 1800,
-            useNativeDriver: true,
-          }),
-        ])
+        Animated.timing(value, {
+          toValue: 1,
+          duration: animationDurationMs,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        })
       )
     );
 
@@ -35,17 +32,23 @@ export function PaywallCarousel({ assets }: { assets: string[] }) {
     return () => {
       animations.forEach((animation) => animation.stop());
     };
-  }, [columns]);
+  }, [animationDurationMs, progress]);
 
-  const columnWidth = Math.min(132, (width - theme.spacing.l * 2) / 3);
+  const columnWidth = Math.min(118, (width - theme.spacing.l * 2 - 24) / 3);
   const cardHeight = columnWidth * 1.54;
+  const gap = 12;
   const baseCards = assets.length > 0 ? assets : [""];
-  const rows = Array.from({ length: 4 }, (_, rowIndex) =>
-    Array.from({ length: 3 }, (_, columnIndex) => {
+  const rowsPerColumn = 6;
+  const columns = Array.from({ length: 3 }, (_, columnIndex) =>
+    Array.from({ length: rowsPerColumn }, (_, rowIndex) => {
       const assetIndex = (rowIndex * 3 + columnIndex) % baseCards.length;
       return baseCards[assetIndex];
     })
   );
+  const rowStride = cardHeight + gap;
+  const cycleHeight = rowsPerColumn * rowStride;
+  const repeatedColumns = columns.map((column) => [...column, ...column, ...column]);
+  const initialOffsets = [0, -rowStride * 2, -rowStride * 4];
 
   return (
     <View
@@ -54,56 +57,50 @@ export function PaywallCarousel({ assets }: { assets: string[] }) {
         position: "absolute",
         inset: 0,
         overflow: "hidden",
-        opacity: 0.96,
+        opacity: 1,
       }}
     >
-      {columns.map((value, columnIndex) => (
+      {repeatedColumns.map((column, columnIndex) => (
         <Animated.View
           key={`paywall-column-${columnIndex}`}
           style={{
             position: "absolute",
-            top: -56,
+            top: -62 + initialOffsets[columnIndex],
             left: theme.spacing.l + columnIndex * (columnWidth + 12),
+            width: columnWidth,
             transform: [
               {
-                translateY: value.interpolate({
-                  inputRange: [-1, 0, 1],
-                  outputRange: [18, 0, -22],
+                translateY: progress[columnIndex].interpolate({
+                  inputRange: [0, 1],
+                  outputRange:
+                    columnIndex === 1 ? [-cycleHeight, 0] : [0, -cycleHeight],
                 }),
               },
             ],
           }}
         >
-          {rows.map((row, rowIndex) => {
-            const asset = row[columnIndex];
-            const rotate =
-              rowIndex % 2 === 0
-                ? `${columnIndex === 1 ? -4 : 4}deg`
-                : `${columnIndex === 1 ? 3 : -3}deg`;
-
-            return (
-              <View
-                key={`${columnIndex}-${rowIndex}-${asset}`}
-                style={{
-                  width: columnWidth,
-                  height: cardHeight,
-                  borderRadius: 30,
-                  overflow: "hidden",
-                  marginBottom: 14,
-                  transform: [{ rotate }],
-                  borderWidth: 1,
-                  borderColor: "rgba(255,255,255,0.12)",
-                  backgroundColor: theme.colors.bg.card,
-                }}
-              >
-                <Image
-                  source={asset}
-                  contentFit="cover"
-                  style={{ width: "100%", height: "100%" }}
-                />
-              </View>
-            );
-          })}
+          {column.map((asset, rowIndex) => (
+            <View
+              key={`${rowIndex}-${columnIndex}-${asset}`}
+              style={{
+                width: columnWidth,
+                height: cardHeight,
+                borderRadius: 30,
+                overflow: "hidden",
+                borderWidth: 1,
+                borderColor: "rgba(255,244,231,0.14)",
+                backgroundColor: theme.colors.bg.card,
+                marginBottom: gap,
+                boxShadow: theme.shadows.soft,
+              }}
+            >
+              <Image
+                source={resolveImageSource(asset)}
+                contentFit="cover"
+                style={{ width: "100%", height: "100%" }}
+              />
+            </View>
+          ))}
         </Animated.View>
       ))}
 
@@ -111,7 +108,7 @@ export function PaywallCarousel({ assets }: { assets: string[] }) {
         style={{
           position: "absolute",
           inset: 0,
-          backgroundColor: "rgba(4, 4, 8, 0.30)",
+          backgroundColor: "rgba(4, 4, 8, 0.18)",
         }}
       />
       <View
@@ -121,7 +118,7 @@ export function PaywallCarousel({ assets }: { assets: string[] }) {
           right: 0,
           top: 0,
           height: height * 0.42,
-          backgroundColor: "rgba(8, 7, 12, 0.34)",
+          backgroundColor: "rgba(8, 7, 12, 0.12)",
         }}
       />
     </View>

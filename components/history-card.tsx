@@ -1,9 +1,9 @@
 import { Image } from "expo-image";
 import { Pressable, Text, View } from "react-native";
 
+import { formatDate, resolveImageSource } from "@/lib/helpers";
 import { theme } from "@/lib/theme";
 import type { HistoryItem } from "@/lib/types";
-import { formatDate } from "@/lib/helpers";
 
 export function HistoryCard({
   item,
@@ -33,7 +33,7 @@ export function HistoryCard({
       >
         <View style={{ height: 180, backgroundColor: theme.colors.bg.card }}>
           <Image
-            source={item.previewUrl}
+            source={resolveImageSource(item.previewUrl)}
             contentFit="cover"
             style={{
               width: "100%",
@@ -43,7 +43,14 @@ export function HistoryCard({
           />
         </View>
 
-        <View style={{ padding: theme.spacing.m, gap: 6 }}>
+        <View
+          style={{
+            padding: theme.spacing.m,
+            minHeight: 146,
+            justifyContent: "space-between",
+            gap: 10,
+          }}
+        >
           <View
             style={{
               alignSelf: "flex-start",
@@ -71,30 +78,34 @@ export function HistoryCard({
             </Text>
           </View>
 
-          <Text
-            selectable
-            numberOfLines={1}
-            style={{
-              color: theme.colors.text.primary,
-              fontSize: theme.typography.body,
-              fontWeight: "700",
-            }}
-          >
-            {item.presetTitle}
-          </Text>
-          <Text
-            selectable
-            numberOfLines={2}
-            style={{
-              color: theme.colors.text.secondary,
-              fontSize: theme.typography.caption,
-              lineHeight: 18,
-            }}
-          >
-            {item.status === "failed"
-              ? item.errorMessage ?? "This generation did not complete."
-              : item.promptSnippet}
-          </Text>
+          <View style={{ gap: 8, minHeight: 72 }}>
+            <Text
+              selectable
+              numberOfLines={2}
+              style={{
+                color: theme.colors.text.primary,
+                fontSize: theme.typography.body,
+                fontWeight: "700",
+                lineHeight: 30,
+              }}
+            >
+              {item.presetTitle}
+            </Text>
+            <Text
+              selectable
+              numberOfLines={2}
+              style={{
+                color: theme.colors.text.secondary,
+                fontSize: theme.typography.caption,
+                lineHeight: 18,
+              }}
+            >
+              {item.status === "failed"
+                ? item.errorMessage ?? "This generation did not complete."
+                : item.promptSnippet}
+            </Text>
+          </View>
+
           <Text
             selectable
             style={{

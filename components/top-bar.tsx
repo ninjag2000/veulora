@@ -1,8 +1,8 @@
+import { LinearGradient } from "expo-linear-gradient";
 import { Pressable, Text, View } from "react-native";
 
 import { theme } from "@/lib/theme";
 import { IconButton } from "@/components/icon-button";
-import { BrandLogo } from "@/components/brand-logo";
 
 interface TopBarProps {
   title?: string;
@@ -10,6 +10,7 @@ interface TopBarProps {
   onBack?: () => void;
   showBrand?: boolean;
   showProBadge?: boolean;
+  colorfulProBadge?: boolean;
   credits?: number;
   onPressPro?: () => void;
   onPressSettings?: () => void;
@@ -21,12 +22,13 @@ export function TopBar({
   onBack,
   showBrand = true,
   showProBadge = true,
+  colorfulProBadge = false,
   credits,
   onPressPro,
   onPressSettings,
 }: TopBarProps) {
   return (
-    <View style={{ gap: theme.spacing.m }}>
+    <View style={{ gap: theme.spacing.l }}>
       <View
         style={{
           flexDirection: "row",
@@ -35,7 +37,7 @@ export function TopBar({
           gap: theme.spacing.s,
         }}
       >
-        <View style={{ minWidth: 86, alignItems: "flex-start" }}>
+        <View style={{ minWidth: 96, alignItems: "flex-start" }}>
           {showBack ? (
             <IconButton
               symbol="chevron.left"
@@ -48,38 +50,72 @@ export function TopBar({
               accessibilityLabel="Open premium offer"
               onPress={onPressPro}
               style={({ pressed }) => ({
-                paddingHorizontal: 16,
-                paddingVertical: 10,
                 borderRadius: theme.radii.pill,
-                backgroundColor: pressed
-                  ? "rgba(255, 255, 255, 0.12)"
-                  : theme.colors.bg.surface,
-                borderWidth: 1,
-                borderColor: theme.colors.border.subtle,
+                overflow: "hidden",
+                opacity: pressed ? 0.92 : 1,
               })}
             >
-              <Text
-                selectable
+              <View
                 style={{
-                  color: theme.colors.text.primary,
-                  fontWeight: "800",
-                  letterSpacing: 1.4,
-                  fontSize: theme.typography.caption,
+                  paddingHorizontal: 16,
+                  paddingVertical: 10,
+                  borderRadius: theme.radii.pill,
+                  overflow: "hidden",
+                  borderWidth: 1,
+                  borderColor: colorfulProBadge
+                    ? "rgba(255, 240, 220, 0.28)"
+                    : theme.colors.border.strong,
+                  backgroundColor: colorfulProBadge
+                    ? undefined
+                    : theme.colors.bg.glass,
+                  position: "relative",
                 }}
               >
-                PRO
-              </Text>
+                {colorfulProBadge ? (
+                  <>
+                    <LinearGradient
+                      colors={theme.gradients.primary}
+                      start={{ x: 0, y: 0.2 }}
+                      end={{ x: 1, y: 1 }}
+                      style={{ position: "absolute", inset: 0 }}
+                    />
+                    <View
+                      pointerEvents="none"
+                      style={{
+                        position: "absolute",
+                        top: 1,
+                        left: 10,
+                        right: 10,
+                        height: 16,
+                        borderRadius: theme.radii.pill,
+                        backgroundColor: "rgba(255, 249, 241, 0.22)",
+                      }}
+                    />
+                  </>
+                ) : null}
+                <Text
+                  selectable
+                  style={{
+                    color: colorfulProBadge
+                      ? theme.colors.text.dark
+                      : theme.colors.metal.champagne,
+                    fontWeight: "800",
+                    letterSpacing: 1.8,
+                    fontSize: theme.typography.micro,
+                  }}
+                >
+                  PRO
+                </Text>
+              </View>
             </Pressable>
           ) : null}
         </View>
 
-        <View style={{ flex: 1, alignItems: "center" }}>
-          {showBrand ? <BrandLogo /> : null}
-        </View>
+        <View style={{ flex: 1 }} />
 
         <View
           style={{
-            minWidth: 86,
+            minWidth: 96,
             flexDirection: "row",
             justifyContent: "flex-end",
             alignItems: "center",
@@ -89,10 +125,10 @@ export function TopBar({
           {credits !== undefined ? (
             <View
               style={{
-                paddingHorizontal: 12,
-                paddingVertical: 8,
+                paddingHorizontal: 14,
+                paddingVertical: 9,
                 borderRadius: theme.radii.pill,
-                backgroundColor: "rgba(255, 255, 255, 0.08)",
+                backgroundColor: theme.colors.bg.glass,
                 borderWidth: 1,
                 borderColor: theme.colors.border.subtle,
               }}
@@ -100,9 +136,10 @@ export function TopBar({
               <Text
                 selectable
                 style={{
-                  color: theme.colors.text.primary,
+                  color: theme.colors.text.editorial,
                   fontSize: theme.typography.caption,
                   fontWeight: "700",
+                  fontVariant: ["tabular-nums"],
                 }}
               >
                 {credits}
@@ -122,9 +159,12 @@ export function TopBar({
         <Text
           selectable
           style={{
-            color: theme.colors.text.primary,
+            color: theme.colors.text.editorial,
             fontSize: theme.typography.title,
-            fontWeight: "800",
+            lineHeight: 34,
+            fontWeight: "700",
+            fontFamily: theme.fonts.editorial,
+            letterSpacing: -0.5,
           }}
         >
           {title}

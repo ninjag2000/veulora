@@ -2,18 +2,25 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { Text, View } from "react-native";
 
 import { EmptyState } from "@/components/empty-state";
-import { PresetTile } from "@/components/preset-card";
+import {
+  PresetTile,
+  getPresetTileDimensions,
+} from "@/components/preset-card";
 import { Screen } from "@/components/screen";
 import { TopBar } from "@/components/top-bar";
-import { findVideoSectionBySlug } from "@/lib/catalog";
+import { findImageSectionBySlug, findVideoSectionBySlug } from "@/lib/catalog";
 import { theme } from "@/lib/theme";
 import { useAppState } from "@/providers/app-provider";
+
+const categoryTileWidth = getPresetTileDimensions("video").width;
 
 export function CategoryScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ slug: string }>();
   const { catalog } = useAppState();
-  const section = catalog ? findVideoSectionBySlug(catalog, params.slug) : null;
+  const imageSection = catalog ? findImageSectionBySlug(catalog, params.slug) : null;
+  const videoSection = catalog ? findVideoSectionBySlug(catalog, params.slug) : null;
+  const section = imageSection ?? videoSection;
 
   if (!section) {
     return (
@@ -21,8 +28,8 @@ export function CategoryScreen() {
         <EmptyState
           title="Category not found"
           description="This collection is not available in the current mock catalog."
-          actionLabel="Back to video"
-          onActionPress={() => router.replace("/video")}
+          actionLabel="Back"
+          onActionPress={() => router.back()}
         />
       </Screen>
     );
@@ -49,14 +56,31 @@ export function CategoryScreen() {
         Explore all presets in the {section.title.toLowerCase()} collection.
       </Text>
 
-      <View style={{ gap: theme.spacing.m }}>
+      <View
+        style={{
+          flexDirection: "row",
+          flexWrap: "wrap",
+          justifyContent: "space-between",
+          columnGap: theme.spacing.m,
+          rowGap: theme.spacing.m,
+        }}
+      >
         {section.items.map((item) => (
-          <PresetTile
-            key={item.id}
-            template={item}
-            variant="video"
-            onPress={() => router.push(`/preset/${item.id}`)}
-          />
+          <View key={item.id} style={{ width: categoryTileWidth }}>
+            <PresetTile
+              template={item}
+              variant="video"
+              onPress={() =>
+                router.push(
+                  (item.modeType === "video"
+                    ? `/video-generator/${item.id}`
+                    : item.kind === "photoPack"
+                    ? `/photo-pack/${item.id}`
+                    : `/generator/${item.id}`) as any
+                )
+              }
+            />
+          </View>
         ))}
       </View>
     </Screen>

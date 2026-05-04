@@ -71,15 +71,30 @@ function mapOnboardingSlide(data: Dict): OnboardingSlide {
 function mapTemplate(data: Dict): Template {
   return {
     id: asString(data.id),
+    kind: (asString(data.kind) as Template["kind"]) || undefined,
     title: asString(data.title),
     subtitle: asString(data.subtitle) || undefined,
     description: asString(data.description),
     category: asString(data.category),
+    stylePrompt:
+      asString(data.stylePrompt ?? data.style_prompt) || undefined,
+    compositionPrompt:
+      asString(data.compositionPrompt ?? data.composition_prompt) || undefined,
+    styleReferenceUrl:
+      asString(data.styleReferenceUrl ?? data.style_reference_url) || undefined,
+    compositionReferenceUrl:
+      asString(data.compositionReferenceUrl ?? data.composition_reference_url) ||
+      undefined,
     coverUrl: asString(data.coverUrl ?? data.cover_image ?? data.cover_url),
     examples: asStringArray(data.examples),
     previewVideoUrl:
       asString(data.previewVideoUrl ?? data.preview_video_url) || undefined,
     modeType: asString(data.modeType ?? data.mode_type, "image") as Template["modeType"],
+    referenceMode:
+      (asString(
+        data.referenceMode ?? data.reference_mode,
+        "none"
+      ) as Template["referenceMode"]) || undefined,
     isPro: asBoolean(data.isPro ?? data.is_pro),
     defaultPrompt: asString(data.defaultPrompt ?? data.default_prompt),
     generationCost: asNumber(data.generationCost ?? data.generation_cost, 0),
@@ -87,6 +102,8 @@ function mapTemplate(data: Dict): Template {
       data.inputRequirements ?? data.input_requirements
     ),
     previewCount: asNumber(data.previewCount ?? data.preview_count, 0) || undefined,
+    photoPackSize:
+      asNumber(data.photoPackSize ?? data.photo_pack_size, 0) || undefined,
     motionPreset: asString(data.motionPreset ?? data.motion_preset) || undefined,
   };
 }
@@ -109,6 +126,7 @@ function mapPresetSection(data: Dict): PresetSection {
     title: asString(data.title),
     layoutType: asString(data.layoutType ?? data.layout_type, "hero") as PresetSection["layoutType"],
     items: asObjectArray(data.items).map(mapTemplate),
+    seeAllSlug: asString(data.seeAllSlug ?? data.see_all_slug) || undefined,
   };
 }
 
@@ -156,11 +174,17 @@ function mapExitOffer(data: Dict): ExitOffer {
       data.discountPercent ?? data.discount_percent,
       0
     ),
-    planId: asString(data.planId ?? data.plan_id),
+    planId: asString(data.planId ?? data.plan_id) || undefined,
     title: asString(data.title),
+    subtitle: asString(data.subtitle) || undefined,
     oldPrice: asString(data.oldPrice ?? data.old_price),
     newPrice: asString(data.newPrice ?? data.new_price),
     durationMs: asNumber(data.durationMs ?? data.duration_ms, 0),
+    tokenGrant: asNumber(data.tokenGrant ?? data.token_grant, 0),
+    grantsPro: asBoolean(data.grantsPro ?? data.grants_pro),
+    productId: asString(data.productId ?? data.product_id) || undefined,
+    offeringId: asString(data.offeringId ?? data.offering_id) || undefined,
+    packageType: asString(data.packageType ?? data.package_type) || undefined,
   };
 }
 

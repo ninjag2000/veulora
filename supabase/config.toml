@@ -1,0 +1,4 @@
+project_id = "veloura-ai"
+
+[functions.generation]
+verify_jwt = false

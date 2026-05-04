@@ -1,9 +1,11 @@
 import { Image } from "expo-image";
-import { Modal, ScrollView, Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 
+import { AppModal } from "@/components/app-modal";
 import { PrimaryButton } from "@/components/primary-button";
+import { resolveImageSource } from "@/lib/helpers";
 import { theme } from "@/lib/theme";
-import type { PhotoGuidelinesContent } from "@/lib/types";
+import type { PhotoGuidelinesContent, TemplateImageSource } from "@/lib/types";
 
 export function GuidelinesModal({
   visible,
@@ -15,62 +17,52 @@ export function GuidelinesModal({
   onContinue: () => void;
 }) {
   return (
-    <Modal visible={visible} animationType="fade" transparent>
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: "rgba(5, 3, 9, 0.78)",
-          padding: theme.spacing.l,
-          justifyContent: "center",
+    <AppModal
+      visible={visible}
+      placement="center"
+      dismissOnBackdropPress={false}
+      cardStyle={{
+        maxHeight: "84%",
+        width: "100%",
+        alignSelf: "center",
+      }}
+    >
+      <ScrollView
+        contentInsetAdjustmentBehavior="automatic"
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{
+          padding: theme.spacing.xl,
+          gap: theme.spacing.l,
         }}
       >
-        <View
+        <Text
+          selectable
           style={{
-            maxHeight: "84%",
-            borderRadius: theme.radii.xl,
-            backgroundColor: theme.colors.bg.surface,
-            borderWidth: 1,
-            borderColor: theme.colors.border.subtle,
-            overflow: "hidden",
+            color: theme.colors.text.editorial,
+            fontSize: theme.typography.title,
+            fontWeight: "700",
+            fontFamily: theme.fonts.editorial,
           }}
         >
-          <ScrollView
-            contentInsetAdjustmentBehavior="automatic"
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{
-              padding: theme.spacing.xl,
-              gap: theme.spacing.l,
-            }}
-          >
-            <Text
-              selectable
-              style={{
-                color: theme.colors.text.primary,
-                fontSize: theme.typography.title,
-                fontWeight: "800",
-              }}
-            >
-              {content.title}
-            </Text>
+          {content.title}
+        </Text>
 
-            <GuidelinesBlock
-              title={content.goodTitle}
-              criteria={content.goodCriteria}
-              examples={content.goodExamples}
-              tone="good"
-            />
-            <GuidelinesBlock
-              title={content.badTitle}
-              criteria={content.badCriteria}
-              examples={content.badExamples}
-              tone="bad"
-            />
+        <GuidelinesBlock
+          title={content.goodTitle}
+          criteria={content.goodCriteria}
+          examples={content.goodExamples}
+          tone="good"
+        />
+        <GuidelinesBlock
+          title={content.badTitle}
+          criteria={content.badCriteria}
+          examples={content.badExamples}
+          tone="bad"
+        />
 
-            <PrimaryButton label="Next" onPress={onContinue} />
-          </ScrollView>
-        </View>
-      </View>
-    </Modal>
+        <PrimaryButton label="Next" onPress={onContinue} />
+      </ScrollView>
+    </AppModal>
   );
 }
 
@@ -82,7 +74,7 @@ function GuidelinesBlock({
 }: {
   title: string;
   criteria: string[];
-  examples: string[];
+  examples: TemplateImageSource[];
   tone: "good" | "bad";
 }) {
   return (
@@ -131,7 +123,11 @@ function GuidelinesBlock({
                   : "rgba(230, 130, 158, 0.24)",
             }}
           >
-            <Image source={image} contentFit="cover" style={{ width: "100%", height: "100%" }} />
+            <Image
+              source={resolveImageSource(image)}
+              contentFit="cover"
+              style={{ width: "100%", height: "100%" }}
+            />
           </View>
         ))}
       </View>

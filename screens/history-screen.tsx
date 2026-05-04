@@ -1,23 +1,28 @@
 import { useRouter } from "expo-router";
 import { startTransition, useDeferredValue, useState } from "react";
 import { Pressable, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EmptyState } from "@/components/empty-state";
-import { FloatingModeSwitcher } from "@/components/floating-mode-switcher";
 import { HistoryCard } from "@/components/history-card";
 import { Screen } from "@/components/screen";
 import { TopBar } from "@/components/top-bar";
 import { theme } from "@/lib/theme";
 import type { HistoryFilter } from "@/lib/types";
-import { useAppState } from "@/providers/app-provider";
+import {
+  useEntitlementsState,
+  useGenerationState,
+} from "@/providers/app-provider";
 
 export function HistoryScreen() {
   const router = useRouter();
-  const { history, entitlements } = useAppState();
+  const { historyFeed } = useGenerationState();
+  const { entitlements } = useEntitlementsState();
   const [filter, setFilter] = useState<HistoryFilter>("all");
   const deferredFilter = useDeferredValue(filter);
+  const insets = useSafeAreaInsets();
 
-  const filteredHistory = history.filter((item) => {
+  const filteredHistory = historyFeed.filter((item) => {
     if (deferredFilter === "all") {
       return true;
     }
@@ -25,11 +30,23 @@ export function HistoryScreen() {
   });
 
   return (
-    <Screen footer={<FloatingModeSwitcher activeMode="history" />}>
+    <Screen
+      contentContainerStyle={{
+        paddingTop: theme.spacing.xxl,
+        paddingBottom: Math.max(220, insets.bottom + 176),
+      }}
+    >
       <TopBar
         title="History"
+        colorfulProBadge={entitlements.isPro}
         credits={entitlements.currentCredits}
-        onPressPro={() => router.push("/paywall?mode=soft&source=credit_limit")}
+        onPressPro={() =>
+          router.push(
+            entitlements.isPro
+              ? "/subscription"
+              : "/paywall?mode=soft&source=credit_limit"
+          )
+        }
         onPressSettings={() => router.push("/settings")}
       />
 
@@ -94,7 +111,7 @@ export function HistoryScreen() {
                 router.push(
                   item.status === "processing"
                     ? `/processing/${item.jobId}`
-                    : `/result/${item.jobId}`
+                    : `/processing/${item.jobId}?source=history`
                 )
               }
             />

@@ -1,250 +1,265 @@
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-import { Animated, Pressable, Text, View } from "react-native";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Dimensions,
+  FlatList,
+  Pressable,
+  Text,
+  View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { BrandLogo } from "@/components/brand-logo";
 import { PrimaryButton } from "@/components/primary-button";
+import { resolveImageSource } from "@/lib/helpers";
 import { theme } from "@/lib/theme";
+import type { OnboardingSlide } from "@/lib/types";
 import { useAppState } from "@/providers/app-provider";
 import { track } from "@/services/analytics-service";
 
-const CARD_HEIGHT = 220;
-const CARD_WIDTH = 156;
-const CARD_GAP = 18;
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
+const HORIZONTAL_PADDING = theme.spacing.l;
+const CARD_WIDTH = SCREEN_WIDTH - HORIZONTAL_PADDING * 2;
+const CARD_HEIGHT = Math.min(Math.max(SCREEN_HEIGHT * 0.5, 420), 560);
 
-function buildBackgroundAssets(paywallAssets: string[], fallbackAssets: string[]) {
-  const source = paywallAssets.length ? paywallAssets : fallbackAssets;
-  const uniqueAssets = source.filter(
-    (asset, index) => source.indexOf(asset) === index
+function OnboardingVisual({ slide }: { slide: OnboardingSlide }) {
+  const insetSize = slide.theme === "fashion" ? 82 : 76;
+
+  return (
+    <View
+      style={{
+        width: CARD_WIDTH,
+        alignSelf: "center",
+        gap: slide.subtitle ? theme.spacing.s : 0,
+      }}
+    >
+      <View
+        style={{
+          height: CARD_HEIGHT,
+          borderRadius: theme.radii.xl,
+          overflow: "hidden",
+          backgroundColor: theme.colors.bg.card,
+          borderWidth: 1,
+          borderColor: "rgba(255,255,255,0.12)",
+          boxShadow: theme.shadows.hero,
+        }}
+      >
+        <Image
+          source={resolveImageSource(slide.heroAsset)}
+          contentFit="cover"
+          style={{ width: "100%", height: "100%" }}
+        />
+
+        <LinearGradient
+          colors={
+            slide.theme === "motion"
+              ? ["rgba(8,7,10,0.02)", "rgba(8,7,10,0.10)", "rgba(8,7,10,0.40)"]
+              : ["rgba(8,7,10,0.00)", "rgba(8,7,10,0.08)", "rgba(8,7,10,0.24)"]
+          }
+          style={{ position: "absolute", inset: 0 }}
+        />
+
+        {slide.insetAsset ? (
+          <View
+            style={{
+              position: "absolute",
+              left: theme.spacing.m,
+              bottom: slide.theme === "editorial" ? theme.spacing.m : theme.spacing.xl,
+              width: insetSize,
+              height: insetSize,
+              borderRadius: theme.radii.pill,
+              padding: 3,
+              backgroundColor: "rgba(255, 192, 220, 0.82)",
+              boxShadow: "0 14px 26px rgba(0, 0, 0, 0.28)",
+            }}
+          >
+            <View
+              style={{
+                flex: 1,
+                borderRadius: theme.radii.pill,
+                overflow: "hidden",
+                borderWidth: 2,
+                borderColor: "rgba(255,255,255,0.92)",
+                backgroundColor: theme.colors.bg.surface,
+              }}
+            >
+              <Image
+                source={resolveImageSource(slide.insetAsset)}
+                contentFit="cover"
+                style={{ width: "100%", height: "100%" }}
+              />
+            </View>
+          </View>
+        ) : null}
+      </View>
+
+      {slide.subtitle ? (
+        <Text
+          selectable
+          style={{
+            color: theme.colors.text.secondary,
+            fontSize: 12,
+            lineHeight: 16,
+            textAlign: "center",
+            paddingHorizontal: theme.spacing.s,
+          }}
+        >
+          {slide.subtitle}
+        </Text>
+      ) : null}
+    </View>
   );
-
-  return uniqueAssets.length ? uniqueAssets : fallbackAssets;
 }
 
-function splitColumns(assets: string[]) {
-  const left = assets.filter((_, index) => index % 2 === 0);
-  const right = assets.filter((_, index) => index % 2 !== 0);
+function OnboardingPage({ slide }: { slide: OnboardingSlide }) {
+  return (
+    <View
+      style={{
+        width: SCREEN_WIDTH,
+        paddingHorizontal: HORIZONTAL_PADDING,
+        alignItems: "center",
+      }}
+    >
+      <View
+        style={{
+          width: "100%",
+          alignItems: "center",
+          gap: theme.spacing.xl,
+        }}
+      >
+        <Text
+          selectable
+          style={{
+            color: theme.colors.accent.blush,
+            fontSize: 31,
+            lineHeight: 35,
+            fontWeight: "700",
+            textAlign: "center",
+            maxWidth: 340,
+          }}
+        >
+          {slide.title}
+        </Text>
 
-  return {
-    left: left.length ? [...left, ...left] : assets,
-    right: right.length ? [...right, ...right] : [...assets, ...assets],
-  };
+        <OnboardingVisual slide={slide} />
+      </View>
+    </View>
+  );
 }
 
 export function OnboardingScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const leftTrack = useRef(new Animated.Value(0)).current;
-  const rightTrack = useRef(new Animated.Value(0)).current;
+  const listRef = useRef<FlatList<OnboardingSlide>>(null);
+  const lastTrackedIndex = useRef(0);
   const { catalog, completeOnboarding } = useAppState();
-
-  const slides = catalog?.onboardingSlides ?? [];
-  const fallbackAssets = slides.flatMap((slide) =>
-    slide.insetAsset ? [slide.heroAsset, slide.insetAsset] : [slide.heroAsset]
-  );
-  const backgroundAssets = buildBackgroundAssets(
-    catalog?.paywallHeroAssets ?? [],
-    fallbackAssets
-  );
-  const { left: leftColumnAssets, right: rightColumnAssets } =
-    splitColumns(backgroundAssets);
+  const slides = useMemo(() => catalog?.onboardingSlides ?? [], [catalog]);
+  const [activeIndex, setActiveIndex] = useState(0);
 
   useEffect(() => {
+    if (!slides.length) {
+      return;
+    }
+
     track("onboarding_view");
     track("onboarding_slide_view", {
-      slide_id: "single-page",
+      slide_id: slides[0]?.id ?? "step-1",
       slide_index: 1,
     });
-  }, []);
-
-  useEffect(() => {
-    const leftAnimation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(leftTrack, {
-          toValue: 1,
-          duration: 16000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(leftTrack, {
-          toValue: 0,
-          duration: 0,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    const rightAnimation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(rightTrack, {
-          toValue: 1,
-          duration: 18000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(rightTrack, {
-          toValue: 0,
-          duration: 0,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-
-    leftAnimation.start();
-    rightAnimation.start();
-
-    return () => {
-      leftAnimation.stop();
-      rightAnimation.stop();
-    };
-  }, [leftTrack, rightTrack]);
+  }, [slides]);
 
   const finish = () => {
     completeOnboarding();
-    track("onboarding_complete");
+    track("onboarding_complete", {
+      slide_id: slides[activeIndex]?.id ?? "unknown",
+      slide_index: activeIndex + 1,
+    });
     router.replace("/paywall?mode=hard&source=onboarding");
   };
 
-  const handleContinue = () => {
-    track("onboarding_continue_tap", {
-      slide_id: "single-page",
-      slide_index: 1,
+  const handleSkip = () => {
+    track("onboarding_skip_tap", {
+      slide_id: slides[activeIndex]?.id ?? "unknown",
+      slide_index: activeIndex + 1,
     });
     finish();
   };
 
-  const handleSkip = () => {
-    track("onboarding_skip_tap", { slide_index: 1 });
-    finish();
+  const handleContinue = () => {
+    const currentSlide = slides[activeIndex];
+
+    track("onboarding_continue_tap", {
+      slide_id: currentSlide?.id ?? "unknown",
+      slide_index: activeIndex + 1,
+    });
+
+    if (activeIndex >= slides.length - 1) {
+      finish();
+      return;
+    }
+
+    listRef.current?.scrollToIndex({
+      index: activeIndex + 1,
+      animated: true,
+    });
+    setActiveIndex((current) => Math.min(current + 1, slides.length - 1));
   };
 
-  const highlights = [
-    "Try yourself in different looks and styles",
-    "Change outfit, scene, and mood in one tap",
-    "Turn photos into realistic AI videos",
-  ];
+  const trackSlideView = (nextIndex: number) => {
+    if (nextIndex === lastTrackedIndex.current || !slides[nextIndex]) {
+      return;
+    }
+
+    lastTrackedIndex.current = nextIndex;
+    track("onboarding_slide_view", {
+      slide_id: slides[nextIndex].id,
+      slide_index: nextIndex + 1,
+    });
+  };
+
+  const handleMomentumEnd = (
+    event: NativeSyntheticEvent<NativeScrollEvent>
+  ) => {
+    const nextIndex = Math.round(
+      event.nativeEvent.contentOffset.x / SCREEN_WIDTH
+    );
+
+    if (Number.isNaN(nextIndex)) {
+      return;
+    }
+
+    setActiveIndex(nextIndex);
+    trackSlideView(nextIndex);
+  };
+
+  const dots = slides.length ? slides : new Array(4).fill(null);
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.black }}>
-      <View
-        pointerEvents="none"
-        style={{
-          position: "absolute",
-          inset: 0,
-          overflow: "hidden",
-        }}
-      >
-        <Animated.View
-          style={{
-            position: "absolute",
-            left: -28,
-            top: insets.top + 84,
-            transform: [
-              {
-                translateY: leftTrack.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0, -1 * (CARD_HEIGHT + CARD_GAP)],
-                }),
-              },
-              { rotate: "-7deg" },
-            ],
-          }}
-        >
-          {leftColumnAssets.map((asset, index) => (
-            <View
-              key={`left_${asset}_${index}`}
-              style={{
-                width: CARD_WIDTH,
-                height: CARD_HEIGHT,
-                borderRadius: 34,
-                overflow: "hidden",
-                marginBottom: CARD_GAP,
-                borderWidth: 1,
-                borderColor: "rgba(255,255,255,0.12)",
-                backgroundColor: theme.colors.bg.card,
-              }}
-            >
-              <Image
-                source={asset}
-                contentFit="cover"
-                style={{ width: "100%", height: "100%" }}
-              />
-            </View>
-          ))}
-        </Animated.View>
-
-        <Animated.View
-          style={{
-            position: "absolute",
-            right: -26,
-            top: insets.top + 36,
-            transform: [
-              {
-                translateY: rightTrack.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [-1 * (CARD_HEIGHT + CARD_GAP), 0],
-                }),
-              },
-              { rotate: "6deg" },
-            ],
-          }}
-        >
-          {rightColumnAssets.map((asset, index) => (
-            <View
-              key={`right_${asset}_${index}`}
-              style={{
-                width: CARD_WIDTH,
-                height: CARD_HEIGHT,
-                borderRadius: 34,
-                overflow: "hidden",
-                marginBottom: CARD_GAP,
-                borderWidth: 1,
-                borderColor: "rgba(255,255,255,0.12)",
-                backgroundColor: theme.colors.bg.card,
-              }}
-            >
-              <Image
-                source={asset}
-                contentFit="cover"
-                style={{ width: "100%", height: "100%" }}
-              />
-            </View>
-          ))}
-        </Animated.View>
-
-        <LinearGradient
-          colors={["rgba(11,7,17,0.92)", "rgba(11,7,17,0.45)", "rgba(11,7,17,0.88)"]}
-          style={{ position: "absolute", inset: 0 }}
-        />
-        <LinearGradient
-          colors={["rgba(11,7,17,0.00)", "rgba(11,7,17,0.78)", "#0B0711"]}
-          style={{
-            position: "absolute",
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: "54%",
-          }}
-        />
-      </View>
+      <LinearGradient
+        colors={["#000000", "#09070B", "#000000"]}
+        style={{ position: "absolute", inset: 0 }}
+      />
 
       <View
         style={{
           flex: 1,
           paddingTop: insets.top + theme.spacing.l,
-          paddingHorizontal: theme.spacing.l,
           paddingBottom: insets.bottom + theme.spacing.l,
           justifyContent: "space-between",
         }}
       >
         <View
           style={{
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
+            position: "absolute",
+            top: insets.top + theme.spacing.l,
+            right: HORIZONTAL_PADDING,
+            zIndex: 3,
           }}
         >
-          <BrandLogo />
           <Pressable accessibilityRole="button" onPress={handleSkip}>
             <Text
               selectable
@@ -261,83 +276,61 @@ export function OnboardingScreen() {
 
         <View
           style={{
-            gap: theme.spacing.l,
-            padding: theme.spacing.xl,
-            borderRadius: 30,
-            backgroundColor: "rgba(13, 9, 20, 0.78)",
-            borderWidth: 1,
-            borderColor: "rgba(255,255,255,0.08)",
+            flex: 1,
+            justifyContent: "center",
+            paddingTop: theme.spacing.s,
+            paddingBottom: theme.spacing.l,
           }}
         >
-          <View style={{ gap: theme.spacing.s }}>
-            <Text
-              selectable
-              style={{
-                color: theme.colors.accent.end,
-                fontSize: theme.typography.caption,
-                fontWeight: "700",
-                letterSpacing: 1.4,
-                textTransform: "uppercase",
-              }}
-            >
-              AI photo and video studio
-            </Text>
-            <Text
-              selectable
-              style={{
-                color: theme.colors.text.primary,
-                fontSize: 36,
-                fontWeight: "800",
-                lineHeight: 40,
-              }}
-            >
-              Create premium looks in seconds
-            </Text>
-            <Text
-              selectable
-              style={{
-                color: theme.colors.text.secondary,
-                fontSize: theme.typography.body,
-                lineHeight: 22,
-              }}
-            >
-              Generate portraits, transformations, and motion clips from one
-              photo or a simple prompt.
-            </Text>
-          </View>
+          <FlatList
+            ref={listRef}
+            data={slides}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => <OnboardingPage slide={item} />}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            bounces={false}
+            onMomentumScrollEnd={handleMomentumEnd}
+            getItemLayout={(_, index) => ({
+              length: SCREEN_WIDTH,
+              offset: SCREEN_WIDTH * index,
+              index,
+            })}
+          />
+        </View>
 
-          <View style={{ gap: theme.spacing.s }}>
-            {highlights.map((item) => (
-              <View
-                key={item}
-                style={{
-                  flexDirection: "row",
-                  alignItems: "flex-start",
-                  gap: theme.spacing.s,
-                }}
-              >
+        <View
+          style={{
+            paddingHorizontal: HORIZONTAL_PADDING,
+            gap: theme.spacing.l,
+          }}
+        >
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "center",
+              alignItems: "center",
+              gap: theme.spacing.s,
+            }}
+          >
+            {dots.map((slide, index) => {
+              const isActive = index === activeIndex;
+
+              return (
                 <View
+                  key={slide?.id ?? `dot_${index}`}
                   style={{
-                    width: 8,
+                    width: isActive ? 28 : 8,
                     height: 8,
-                    marginTop: 7,
-                    borderRadius: 999,
-                    backgroundColor: theme.colors.accent.end,
+                    borderRadius: theme.radii.pill,
+                    backgroundColor: isActive
+                      ? theme.colors.accent.blush
+                      : "rgba(255,255,255,0.18)",
                   }}
                 />
-                <Text
-                  selectable
-                  style={{
-                    flex: 1,
-                    color: theme.colors.text.primary,
-                    fontSize: theme.typography.body,
-                    lineHeight: 22,
-                  }}
-                >
-                  {item}
-                </Text>
-              </View>
-            ))}
+              );
+            })}
           </View>
 
           <PrimaryButton label="Continue" onPress={handleContinue} />
