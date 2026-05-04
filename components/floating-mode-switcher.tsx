@@ -1,5 +1,3 @@
-import { BlurView } from "expo-blur";
-import { useRouter } from "expo-router";
 import { Pressable, Text, View } from "react-native";
 
 import { theme } from "@/lib/theme";
@@ -7,30 +5,23 @@ import type { RootMode } from "@/lib/types";
 
 interface FloatingModeSwitcherProps {
   activeMode: RootMode;
+  onSelect: (mode: RootMode) => void;
 }
-
-const routes: Record<RootMode, "/image" | "/video" | "/history"> = {
-  image: "/image",
-  video: "/video",
-  history: "/history",
-};
 
 export function FloatingModeSwitcher({
   activeMode,
+  onSelect,
 }: FloatingModeSwitcherProps) {
-  const router = useRouter();
-
   return (
-    <BlurView
-      tint="dark"
-      intensity={70}
+    <View
       style={{
-        borderRadius: theme.radii.pill,
+        borderRadius: theme.radii.xl,
         overflow: "hidden",
         borderWidth: 1,
         borderColor: theme.colors.border.subtle,
         padding: 6,
-        backgroundColor: "rgba(21, 16, 29, 0.82)",
+        backgroundColor: "rgba(17, 14, 18, 0.96)",
+        boxShadow: theme.shadows.soft,
       }}
     >
       <View style={{ flexDirection: "row", gap: 6 }}>
@@ -42,27 +33,35 @@ export function FloatingModeSwitcher({
               accessibilityRole="button"
               accessibilityState={{ selected: isActive }}
               accessibilityLabel={`${mode} mode`}
-              onPress={() => router.replace(routes[mode])}
+              onPress={() => onSelect(mode)}
               style={({ pressed }) => ({
                 flex: 1,
-                minHeight: 46,
+                minHeight: 48,
                 borderRadius: theme.radii.pill,
                 alignItems: "center",
                 justifyContent: "center",
+                overflow: "hidden",
                 backgroundColor: isActive
-                  ? "rgba(200, 107, 255, 0.22)"
+                  ? "rgba(242, 218, 184, 0.20)"
                   : pressed
-                  ? "rgba(255, 255, 255, 0.08)"
+                  ? "rgba(255, 246, 234, 0.08)"
+                  : "transparent",
+                borderWidth: isActive ? 1 : 0,
+                borderColor: isActive
+                  ? "rgba(242, 218, 184, 0.22)"
                   : "transparent",
               })}
             >
               <Text
                 selectable
                 style={{
-                  color: theme.colors.text.primary,
-                  fontWeight: isActive ? "800" : "600",
-                  textTransform: "capitalize",
-                  fontSize: theme.typography.caption,
+                  color: isActive
+                    ? theme.colors.text.editorial
+                    : theme.colors.text.secondary,
+                  fontWeight: isActive ? "800" : "700",
+                  textTransform: "uppercase",
+                  letterSpacing: 1.15,
+                  fontSize: theme.typography.micro,
                 }}
               >
                 {mode}
@@ -71,6 +70,6 @@ export function FloatingModeSwitcher({
           );
         })}
       </View>
-    </BlurView>
+    </View>
   );
 }

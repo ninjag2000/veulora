@@ -1,24 +1,26 @@
 {
   "expo": {
-    "name": "Veloura AI",
-    "slug": "veloura-ai",
-    "scheme": "veloura",
+    "name": "StudioBloom",
+    "slug": "studiobloom",
+    "scheme": "studiobloom",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
+    "icon": "./assets/icon.png",
     "experiments": {
       "typedRoutes": true
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.codex.veloura",
+      "bundleIdentifier": "com.codex.studiobloom",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSPhotoLibraryAddUsageDescription": "Allow Veloura AI to save generated images and videos to your photo library."
+        "NSPhotoLibraryAddUsageDescription": "Allow StudioBloom to save generated images and videos to your photo library."
       }
     },
     "android": {
       "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0B0711"
       },
       "permissions": [
@@ -29,7 +31,7 @@
         "android.permission.READ_MEDIA_VIDEO",
         "android.permission.READ_MEDIA_AUDIO"
       ],
-      "package": "com.codex.veloura"
+      "package": "com.codex.studiobloom"
     },
     "plugins": [
       "expo-router",
@@ -37,15 +39,15 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow Veloura AI to access your photos for AI generation.",
-          "cameraPermission": "Allow Veloura AI to access your camera for AI generation.",
+          "photosPermission": "Allow StudioBloom to access your photos for AI generation.",
+          "cameraPermission": "Allow StudioBloom to access your camera for AI generation.",
           "microphonePermission": false
         }
       ],
       [
         "expo-media-library",
         {
-          "photosPermission": "Allow Veloura AI to save generated images and videos."
+          "photosPermission": "Allow StudioBloom to save generated images and videos."
         }
       ],
       "expo-video"

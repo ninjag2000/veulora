@@ -1,4 +1,7 @@
+import { Image as ReactNativeImage } from "react-native";
+
 import type { HistoryItem } from "@/lib/types";
+import type { TemplateImageSource } from "@/lib/types";
 
 export const STORAGE_KEY = "veloura.store.v1";
 export const EXIT_OFFER_DURATION_MS = 24 * 60 * 60 * 1000;
@@ -59,6 +62,12 @@ export function getCurrentOutput(item: HistoryItem, index: number) {
     return item.previewUrl;
   }
   return item.outputUrls[index] ?? item.outputUrls[0];
+}
+
+export function resolveImageSource(source: TemplateImageSource) {
+  return typeof source === "number"
+    ? ReactNativeImage.resolveAssetSource(source)
+    : source;
 }
 
 export function isVideoAsset(url: string) {

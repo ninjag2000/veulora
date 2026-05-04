@@ -1,5 +1,3 @@
-import { fetch as expoFetch } from "expo/fetch";
-
 import { appConfig, isLiveApiConfigured } from "@/lib/env";
 
 export class ApiError extends Error {
@@ -52,6 +50,13 @@ async function parseResponse(response: Response) {
   }
 }
 
+function isFormDataBody(body: unknown): body is FormData {
+  return (
+    typeof FormData !== "undefined" &&
+    (body instanceof FormData || Object.prototype.toString.call(body) === "[object FormData]")
+  );
+}
+
 export async function apiRequest<T>(
   path: string,
   { accountId, timeoutMs, headers, body, ...rest }: RequestOptions
@@ -63,13 +68,16 @@ export async function apiRequest<T>(
   );
 
   try {
-    const response = await expoFetch(getUrl(path), {
+    const response = await fetch(getUrl(path), {
       ...rest,
       body,
       headers: {
         Accept: "application/json",
         "X-Account-Id": accountId,
-        ...(body && !(body instanceof FormData)
+        ...(appConfig.appProxyToken
+          ? { "X-App-Proxy-Token": appConfig.appProxyToken }
+          : {}),
+        ...(body && !isFormDataBody(body)
           ? { "Content-Type": "application/json" }
           : {}),
         ...(headers ?? {}),

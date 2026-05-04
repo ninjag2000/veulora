@@ -1,5 +1,6 @@
 export type RootMode = "image" | "video" | "history";
 export type TemplateMode = "image" | "video";
+export type TemplateReferenceMode = "none" | "human-portrait" | "human-closeup";
 export type PaywallMode = "soft" | "hard";
 export type PaywallSource =
   | "onboarding"
@@ -9,6 +10,8 @@ export type PaywallSource =
   | "video_generation";
 export type HistoryFilter = "all" | "image" | "video";
 export type RatioOption = "1:1" | "3:4" | "4:5" | "9:16";
+export type VideoResolution = "480p" | "720p" | "1080p";
+export type TemplateImageSource = string | number;
 export type GenerationStatus =
   | "queued"
   | "uploading"
@@ -21,8 +24,8 @@ export interface OnboardingSlide {
   id: string;
   title: string;
   subtitle?: string;
-  heroAsset: string;
-  insetAsset?: string;
+  heroAsset: TemplateImageSource;
+  insetAsset?: TemplateImageSource;
   theme: "portrait" | "fashion" | "editorial" | "motion";
   animationType:
     | "float"
@@ -35,19 +38,26 @@ export interface OnboardingSlide {
 
 export interface Template {
   id: string;
+  kind?: "single" | "photoPack";
   title: string;
   subtitle?: string;
   description: string;
   category: string;
-  coverUrl: string;
-  examples: string[];
+  stylePrompt?: string;
+  compositionPrompt?: string;
+  styleReferenceUrl?: string;
+  compositionReferenceUrl?: string;
+  coverUrl: TemplateImageSource;
+  examples: TemplateImageSource[];
   previewVideoUrl?: string;
   modeType: TemplateMode;
+  referenceMode?: TemplateReferenceMode;
   isPro: boolean;
   defaultPrompt: string;
   generationCost: number;
   inputRequirements: string[];
   previewCount?: number;
+  photoPackSize?: number;
   motionPreset?: string;
 }
 
@@ -55,7 +65,7 @@ export interface FeaturedBanner {
   id: string;
   title: string;
   subtitle: string;
-  imageUrl: string;
+  imageUrl: TemplateImageSource;
   ctaLabel: string;
   presetId: string;
   isPro: boolean;
@@ -64,8 +74,9 @@ export interface FeaturedBanner {
 export interface PresetSection {
   id: string;
   title: string;
-  layoutType: "hero" | "two-grid" | "single-banner";
+  layoutType: "hero" | "two-grid" | "single-banner" | "horizontal";
   items: Template[];
+  seeAllSlug?: string;
 }
 
 export interface VideoSection {
@@ -92,11 +103,17 @@ export interface SubscriptionPlan {
 export interface ExitOffer {
   id: string;
   discountPercent: number;
-  planId: string;
+  planId?: string;
   title: string;
+  subtitle?: string;
   oldPrice: string;
   newPrice: string;
   durationMs: number;
+  tokenGrant: number;
+  grantsPro?: boolean;
+  productId?: string;
+  offeringId?: string;
+  packageType?: string;
 }
 
 export interface PhotoGuidelinesContent {
@@ -105,8 +122,8 @@ export interface PhotoGuidelinesContent {
   badTitle: string;
   goodCriteria: string[];
   badCriteria: string[];
-  goodExamples: string[];
-  badExamples: string[];
+  goodExamples: TemplateImageSource[];
+  badExamples: TemplateImageSource[];
 }
 
 export interface BootstrapPayload {
@@ -117,7 +134,7 @@ export interface BootstrapPayload {
   videoSections: VideoSection[];
   subscriptionPlans: SubscriptionPlan[];
   paywallBenefits: string[];
-  paywallHeroAssets: string[];
+  paywallHeroAssets: TemplateImageSource[];
   exitOffer: ExitOffer;
   photoGuidelines: PhotoGuidelinesContent;
 }
@@ -143,14 +160,16 @@ export interface GenerationJob {
   presetTitle: string;
   category: string;
   prompt: string;
-  previewAsset: string;
+  previewAsset: TemplateImageSource;
   referenceImageUri?: string;
   ratio?: RatioOption;
+  resolution?: VideoResolution;
+  outputCount?: number;
   createdAt: number;
   mockDurationMs?: number;
   generationCost: number;
   isPro: boolean;
-  outputs: string[];
+  outputs: TemplateImageSource[];
   shouldFail?: boolean;
   status: GenerationStatus;
   progressPercent: number;
@@ -175,8 +194,8 @@ export interface HistoryItem {
   templateId?: string;
   type: TemplateMode;
   status: "completed" | "processing" | "failed";
-  previewUrl: string;
-  outputUrls: string[];
+  previewUrl: TemplateImageSource;
+  outputUrls: TemplateImageSource[];
   createdAt: string;
   presetTitle: string;
   promptSnippet: string;
@@ -191,9 +210,11 @@ export interface ToastMessage {
 
 export interface CreateGenerationParams {
   templateId: string;
-  prompt: string;
+  prompt?: string;
   referenceImageUri?: string;
   ratio?: RatioOption;
+  resolution?: VideoResolution;
+  outputCount?: number;
 }
 
 export type CreateGenerationResult =
@@ -209,10 +230,12 @@ export type CreateGenerationResult =
   | {
       kind: "error";
       message: string;
+      temporaryBackendUnavailable?: boolean;
     };
 
 export interface PersistedStore {
   onboardingCompleted: boolean;
+  aiProcessingConsentAccepted?: boolean;
   accountId: string;
   entitlements: AppEntitlements;
   settings: AppSettings;

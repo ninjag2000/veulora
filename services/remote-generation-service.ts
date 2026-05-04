@@ -18,34 +18,78 @@ import {
 } from "@/services/backend-mappers";
 
 function buildReferenceUploadPart(referenceImageUri: string) {
-  const extension = referenceImageUri.split(".").pop()?.toLowerCase() ?? "jpg";
+  const cleanUri = referenceImageUri.split("?")[0] ?? referenceImageUri;
+  const rawExtension = cleanUri.split(".").pop()?.toLowerCase();
+  const extension =
+    rawExtension && ["jpg", "jpeg", "png", "webp"].includes(rawExtension)
+      ? rawExtension
+      : "jpg";
   const type =
     extension === "png"
       ? "image/png"
       : extension === "webp"
       ? "image/webp"
       : "image/jpeg";
+  const nameExtension = extension === "jpeg" ? "jpg" : extension;
 
   return {
     uri: referenceImageUri,
-    name: `reference.${extension}`,
+    name: `reference.${nameExtension}`,
     type,
   } as any;
 }
 
+function getTemplateRemoteUrl(source: Template["coverUrl"] | Template["examples"][number]) {
+  return typeof source === "string" && source.trim().length > 0 ? source : null;
+}
+
+function getStyleReferenceUrl(template: Template) {
+  if (typeof template.styleReferenceUrl === "string" && template.styleReferenceUrl.trim()) {
+    return template.styleReferenceUrl.trim();
+  }
+
+  return (
+    template.examples.map(getTemplateRemoteUrl).find((item) => Boolean(item)) ??
+    getTemplateRemoteUrl(template.coverUrl)
+  );
+}
+
+function getCompositionReferenceUrl(template: Template) {
+  if (
+    typeof template.compositionReferenceUrl === "string" &&
+    template.compositionReferenceUrl.trim()
+  ) {
+    return template.compositionReferenceUrl.trim();
+  }
+
+  return getTemplateRemoteUrl(template.coverUrl) ?? getStyleReferenceUrl(template);
+}
+
 export async function createRemoteGenerationJob(
-  params: CreateGenerationParams,
+  params: CreateGenerationParams & { prompt: string; modelPrompt?: string },
   template: Template,
   accountId: string
 ) {
+  const requestPrompt = (params.modelPrompt ?? params.prompt).trim();
   const endpoint =
     template.modeType === "video" ? "/generation/video" : "/generation/image";
+  const styleReferenceUrl = getStyleReferenceUrl(template);
+  const compositionReferenceUrl = getCompositionReferenceUrl(template);
 
   const payloadBase = {
     templateId: template.id,
     template_id: template.id,
-    prompt: params.prompt.trim(),
+    prompt: requestPrompt,
+    referenceMode: template.referenceMode,
+    reference_mode: template.referenceMode,
     ratio: params.ratio,
+    resolution: params.resolution,
+    outputCount: params.outputCount,
+    output_count: params.outputCount,
+    styleReferenceUrl,
+    style_reference_url: styleReferenceUrl,
+    compositionReferenceUrl,
+    composition_reference_url: compositionReferenceUrl,
     generationCost: template.generationCost,
     generation_cost: template.generationCost,
     modeType: template.modeType,
@@ -53,12 +97,30 @@ export async function createRemoteGenerationJob(
   };
 
   const response = params.referenceImageUri
-    ? await (() => {
+      ? await (() => {
         const formData = new FormData();
         formData.append("templateId", template.id);
-        formData.append("prompt", params.prompt.trim());
+        formData.append("prompt", requestPrompt);
+        if (template.referenceMode) {
+          formData.append("referenceMode", template.referenceMode);
+        }
         if (params.ratio) {
           formData.append("ratio", params.ratio);
+        }
+        if (params.resolution) {
+          formData.append("resolution", params.resolution);
+        }
+        if (params.outputCount) {
+          formData.append("outputCount", String(params.outputCount));
+        }
+        if (template.generationCost > 0) {
+          formData.append("generationCost", String(template.generationCost));
+        }
+        if (styleReferenceUrl) {
+          formData.append("styleReferenceUrl", styleReferenceUrl);
+        }
+        if (compositionReferenceUrl) {
+          formData.append("compositionReferenceUrl", compositionReferenceUrl);
         }
         formData.append(
           "referenceImage",
@@ -92,6 +154,8 @@ export async function createRemoteGenerationJob(
     previewAsset: params.referenceImageUri ?? template.coverUrl,
     referenceImageUri: params.referenceImageUri,
     ratio: params.ratio,
+    resolution: params.resolution,
+    outputCount: params.outputCount,
     createdAt: Date.now(),
     generationCost: template.generationCost,
     isPro: template.isPro,

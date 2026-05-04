@@ -20,72 +20,119 @@ export function PrimaryButton({
   secondary = false,
   compact = false,
 }: PrimaryButtonProps) {
+  const minHeight = compact ? 50 : 60;
+  const labelSize = compact ? theme.typography.caption : theme.typography.body;
+
   return (
     <Pressable
       accessibilityRole="button"
       disabled={disabled || loading}
       onPress={onPress}
       style={({ pressed }) => ({
-        opacity: disabled ? 0.48 : pressed ? 0.9 : 1,
+        opacity: disabled ? 0.46 : 1,
+        transform: [{ scale: pressed ? 0.992 : 1 }],
       })}
     >
       {secondary ? (
         <View
           style={{
-            minHeight: compact ? 44 : 54,
+            minHeight,
             borderRadius: theme.radii.pill,
-            backgroundColor: theme.colors.bg.elevated,
+            backgroundColor: theme.colors.bg.glass,
             borderWidth: 1,
-            borderColor: theme.colors.border.subtle,
+            borderColor: theme.colors.border.strong,
             alignItems: "center",
             justifyContent: "center",
-            paddingHorizontal: compact ? 18 : 22,
+            paddingHorizontal: compact ? 18 : 24,
+            boxShadow: theme.shadows.soft,
+            overflow: "hidden",
           }}
         >
-          {loading ? (
-            <ActivityIndicator color={theme.colors.text.primary} />
-          ) : (
-            <Text
-              selectable
-              style={{
-                color: theme.colors.text.primary,
-                fontSize: theme.typography.body,
-                fontWeight: "700",
-              }}
-            >
-              {label}
-            </Text>
-          )}
+          <LinearGradient
+            colors={theme.gradients.glass}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={{ position: "absolute", inset: 0 }}
+          />
+            {loading ? (
+              <ActivityIndicator color={theme.colors.text.primary} />
+            ) : (
+              <Text
+                selectable={false}
+                allowFontScaling={false}
+                style={{
+                  color: theme.colors.text.primary,
+                  fontSize: labelSize,
+                  fontWeight: "700",
+                  letterSpacing: 0.3,
+                }}
+              >
+                {label}
+              </Text>
+            )}
         </View>
       ) : (
-        <LinearGradient
-          colors={theme.gradients.primary}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
+        <View
           style={{
-            minHeight: compact ? 46 : 58,
             borderRadius: theme.radii.pill,
-            alignItems: "center",
-            justifyContent: "center",
-            paddingHorizontal: compact ? 18 : 22,
+            overflow: "hidden",
             boxShadow: theme.shadows.glow,
           }}
         >
-          {loading ? (
-            <ActivityIndicator color={theme.colors.text.primary} />
-          ) : (
-            <Text
-              selectable
+          <LinearGradient
+            colors={theme.gradients.primary}
+            start={{ x: 0, y: 0.2 }}
+            end={{ x: 1, y: 1 }}
+            style={{
+              minHeight,
+              borderRadius: theme.radii.pill,
+              alignItems: "center",
+              justifyContent: "center",
+              paddingHorizontal: compact ? 18 : 24,
+              borderWidth: 1,
+              borderColor: "rgba(255, 240, 220, 0.28)",
+            }}
+          >
+            <View
+              pointerEvents="none"
               style={{
-                color: theme.colors.text.primary,
-                fontSize: theme.typography.body,
-                fontWeight: "800",
+                position: "absolute",
+                top: 1,
+                left: 10,
+                right: 10,
+                height: compact ? 20 : 24,
+                borderRadius: theme.radii.pill,
+                backgroundColor: "rgba(255, 249, 241, 0.22)",
               }}
-            >
-              {label}
-            </Text>
-          )}
-        </LinearGradient>
+            />
+            <View
+              pointerEvents="none"
+              style={{
+                position: "absolute",
+                inset: 0,
+                borderRadius: theme.radii.pill,
+                borderWidth: 1,
+                borderColor: "rgba(100, 50, 28, 0.10)",
+              }}
+            />
+            {loading ? (
+              <ActivityIndicator color={theme.colors.text.dark} />
+            ) : (
+              <Text
+                selectable={false}
+                allowFontScaling={false}
+                style={{
+                  color: theme.colors.text.dark,
+                  fontSize: labelSize,
+                  fontWeight: "900",
+                  letterSpacing: 0.35,
+                }}
+              >
+                {label}
+              </Text>
+            )}
+          </LinearGradient>
+        </View>
       )}
     </Pressable>
   );

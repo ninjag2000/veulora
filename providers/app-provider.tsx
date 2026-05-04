@@ -6,11 +6,15 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
 
-import { findPlanById, findTemplateById } from "@/lib/catalog";
+import {
+  findPlanById,
+  findTemplateByIdWithContentLabFallback,
+} from "@/lib/catalog";
 import { isLiveApiConfigured } from "@/lib/env";
 import { createAccountId, generateId, STORAGE_KEY } from "@/lib/helpers";
 import type {
@@ -31,8 +35,10 @@ import {
   refreshRemoteEntitlements,
 } from "@/services/bootstrap-service";
 import {
+  buildImageGenerationPrompt,
+  buildImageReferencePrompt,
+  buildVideoReferencePrompt,
   buildCompletedHistoryItem,
-  buildFailedHistoryItem,
   buildProcessingHistoryItem,
   createGenerationJob,
   deriveGenerationSnapshot,
@@ -43,12 +49,59 @@ import {
   pollRemoteGenerationJob,
 } from "@/services/remote-generation-service";
 import {
+  purchaseExitOffer,
   purchaseSubscription,
   restoreSubscription,
   syncPurchasesEntitlements,
 } from "@/services/purchases-service";
+import { ApiError } from "@/services/api-client";
 
 type BootstrapStatus = "loading" | "ready" | "error";
+
+function isProviderValidationFailure(error: unknown) {
+  if (!(error instanceof ApiError)) {
+    return false;
+  }
+
+  return (
+    (error.status >= 400 && error.status < 500) ||
+    /unprocessable entity/i.test(error.message)
+  );
+}
+
+function isTemporaryBackendUnavailableError(error: ApiError) {
+  return (
+    error.code === "BACKEND_SCHEMA_OUTDATED" ||
+    error.code === "JOB_STORE_FAILED" ||
+    error.code === "JOB_LOOKUP_FAILED" ||
+    error.code === "JOB_RETRY_UPDATE_FAILED" ||
+    error.status >= 500
+  );
+}
+
+function getRemoteGenerationErrorInfo(error: unknown) {
+  if (!(error instanceof ApiError)) {
+    return {
+      message:
+        error instanceof Error
+          ? error.message
+          : "Failed to start generation with the live backend.",
+      temporaryBackendUnavailable: false,
+    };
+  }
+
+  if (isTemporaryBackendUnavailableError(error)) {
+    return {
+      message: "Generation backend is updating. Try again in a minute.",
+      temporaryBackendUnavailable: true,
+    };
+  }
+
+  return {
+    message: error.message || "Failed to start generation with the live backend.",
+    temporaryBackendUnavailable: false,
+  };
+}
 
 interface AppContextValue {
   bootstrapStatus: BootstrapStatus;
@@ -56,29 +109,83 @@ interface AppContextValue {
   catalog: BootstrapPayload | null;
   accountId: string;
   onboardingCompleted: boolean;
+  aiProcessingConsentAccepted: boolean;
+  aiProcessingConsentVisible: boolean;
   entitlements: AppEntitlements;
   settings: AppSettings;
   history: HistoryItem[];
+  historyFeed: HistoryItem[];
   jobs: GenerationJob[];
   toasts: ToastMessage[];
   retryBootstrap: () => void;
   completeOnboarding: () => void;
+  acceptAiProcessingConsent: () => void;
+  declineAiProcessingConsent: () => void;
+  openAiProcessingConsentPrompt: () => void;
   createGeneration: (params: CreateGenerationParams) => Promise<CreateGenerationResult>;
   retryGeneration: (jobId: string) => Promise<CreateGenerationResult>;
   purchasePlan: (planId: string) => Promise<void>;
+  purchaseExitOffer: () => Promise<void>;
   restorePurchases: () => Promise<void>;
   setNotificationsEnabled: (enabled: boolean) => void;
   markVideoGuidelinesSeen: () => void;
   pushToast: (message: string) => void;
   dismissToast: (id: string) => void;
   deleteHistoryItem: (id: string) => void;
+  isJobReady: (jobId: string) => boolean;
 }
 
-const AppContext = createContext<AppContextValue | null>(null);
+type CatalogContextValue = Pick<
+  AppContextValue,
+  | "bootstrapStatus"
+  | "bootstrapError"
+  | "catalog"
+  | "accountId"
+  | "onboardingCompleted"
+  | "aiProcessingConsentAccepted"
+  | "aiProcessingConsentVisible"
+  | "retryBootstrap"
+  | "completeOnboarding"
+  | "acceptAiProcessingConsent"
+  | "declineAiProcessingConsent"
+  | "openAiProcessingConsentPrompt"
+>;
+
+type EntitlementsContextValue = Pick<
+  AppContextValue,
+  | "entitlements"
+  | "settings"
+  | "purchasePlan"
+  | "purchaseExitOffer"
+  | "restorePurchases"
+  | "setNotificationsEnabled"
+  | "markVideoGuidelinesSeen"
+>;
+
+type GenerationContextValue = Pick<
+  AppContextValue,
+  | "history"
+  | "historyFeed"
+  | "jobs"
+  | "createGeneration"
+  | "retryGeneration"
+  | "deleteHistoryItem"
+  | "isJobReady"
+>;
+
+type ToastContextValue = Pick<
+  AppContextValue,
+  "toasts" | "pushToast" | "dismissToast"
+>;
+
+const CatalogContext = createContext<CatalogContextValue | null>(null);
+const EntitlementsContext = createContext<EntitlementsContextValue | null>(null);
+const GenerationContext = createContext<GenerationContextValue | null>(null);
+const ToastContext = createContext<ToastContextValue | null>(null);
 
 const initialEntitlements: AppEntitlements = {
   isPro: false,
-  currentCredits: 12,
+  currentCredits: 4,
   subscriptionPlan: null,
   dailyFreeRemaining: 3,
 };
@@ -88,6 +195,36 @@ const initialSettings: AppSettings = {
   videoGuidelinesSeen: false,
 };
 
+function compareHistoryByNewest(a: HistoryItem, b: HistoryItem) {
+  return Date.parse(b.createdAt) - Date.parse(a.createdAt);
+}
+
+function compareHistoryFeed(a: HistoryItem, b: HistoryItem) {
+  const aIsActive = a.status === "processing";
+  const bIsActive = b.status === "processing";
+
+  if (aIsActive !== bIsActive) {
+    return aIsActive ? -1 : 1;
+  }
+
+  return compareHistoryByNewest(a, b);
+}
+
+function keepCompletedHistory(items: HistoryItem[]) {
+  return items
+    .filter((item) => item.status === "completed")
+    .sort(compareHistoryByNewest);
+}
+
+function upsertCompletedHistoryItem(
+  items: HistoryItem[],
+  nextItem: HistoryItem
+) {
+  return [nextItem, ...items.filter((item) => item.jobId !== nextItem.jobId)].sort(
+    compareHistoryByNewest
+  );
+}
+
 async function loadPersistedStore() {
   const raw = await AsyncStorage.getItem(STORAGE_KEY);
 
@@ -95,7 +232,12 @@ async function loadPersistedStore() {
     return null;
   }
 
-  return JSON.parse(raw) as PersistedStore;
+  const parsed = JSON.parse(raw) as PersistedStore;
+
+  return {
+    ...parsed,
+    history: keepCompletedHistory(parsed.history ?? []),
+  } satisfies PersistedStore;
 }
 
 export function AppProvider({ children }: PropsWithChildren) {
@@ -105,25 +247,28 @@ export function AppProvider({ children }: PropsWithChildren) {
   const [catalog, setCatalog] = useState<BootstrapPayload | null>(null);
   const [accountId, setAccountId] = useState("");
   const [onboardingCompleted, setOnboardingCompleted] = useState(false);
+  const [aiProcessingConsentAccepted, setAiProcessingConsentAccepted] = useState(true);
+  const [aiProcessingConsentVisible, setAiProcessingConsentVisible] = useState(false);
   const [entitlements, setEntitlements] = useState<AppEntitlements>(initialEntitlements);
   const [settings, setSettings] = useState<AppSettings>(initialSettings);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [jobs, setJobs] = useState<GenerationJob[]>([]);
+  const [completedJobIds, setCompletedJobIds] = useState<string[]>([]);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [bootstrapNonce, setBootstrapNonce] = useState(0);
 
-  const dismissToast = (id: string) => {
+  const dismissToast = useCallback((id: string) => {
     setToasts((current) => current.filter((item) => item.id !== id));
-  };
+  }, []);
 
-  const pushToast = (message: string) => {
+  const pushToast = useCallback((message: string) => {
     const id = generateId("toast");
     setToasts((current) => [...current, { id, message }]);
 
     setTimeout(() => {
       dismissToast(id);
     }, 2800);
-  };
+  }, [dismissToast]);
 
   useEffect(() => {
     let cancelled = false;
@@ -152,9 +297,11 @@ export function AppProvider({ children }: PropsWithChildren) {
         setCatalog(payload.catalog);
         setAccountId(resolvedAccountId);
         setOnboardingCompleted(persisted?.onboardingCompleted ?? false);
+        setAiProcessingConsentAccepted(true);
+        setAiProcessingConsentVisible(false);
         setEntitlements(syncedPurchases ?? payload.entitlements);
         setSettings(persisted?.settings ?? initialSettings);
-        setHistory(payload.history);
+        setHistory(keepCompletedHistory(payload.history));
         setJobs(() => {
           const persistedJobs = persisted?.jobs ?? [];
           const recoveredRemoteJobs = payload.history
@@ -219,6 +366,7 @@ export function AppProvider({ children }: PropsWithChildren) {
 
     void persistStore({
       onboardingCompleted,
+      aiProcessingConsentAccepted,
       accountId,
       entitlements,
       settings,
@@ -227,6 +375,7 @@ export function AppProvider({ children }: PropsWithChildren) {
     });
   }, [
     accountId,
+    aiProcessingConsentAccepted,
     bootstrapStatus,
     entitlements,
     history,
@@ -238,34 +387,22 @@ export function AppProvider({ children }: PropsWithChildren) {
 
   const reconcileJobs = useCallback(() => {
     startTransition(() => {
-      setHistory((currentHistory) =>
-        currentHistory.map((item) => {
-          if (item.status !== "processing") {
-            return item;
-          }
+      setHistory((currentHistory) => {
+        let nextHistory = keepCompletedHistory(currentHistory);
 
-          const job = jobs.find((candidate) => candidate.id === item.jobId);
-
-          if (!job) {
-            return item;
-          }
-
+        jobs.forEach((job) => {
           const snapshot = deriveGenerationSnapshot(job);
 
           if (snapshot.status === "completed") {
-            return buildCompletedHistoryItem(job);
-          }
-
-          if (snapshot.status === "failed") {
-            return buildFailedHistoryItem(
-              job,
-              snapshot.errorMessage ?? "The generation failed."
+            nextHistory = upsertCompletedHistoryItem(
+              nextHistory,
+              buildCompletedHistoryItem(job)
             );
           }
+        });
 
-          return item;
-        })
-      );
+        return nextHistory;
+      });
     });
   }, [jobs]);
 
@@ -293,12 +430,24 @@ export function AppProvider({ children }: PropsWithChildren) {
           try {
             return await pollRemoteGenerationJob(accountId, job);
           } catch (error) {
+            if (isProviderValidationFailure(error)) {
+              return {
+                ...job,
+                status: "failed",
+                progressPercent: 0,
+                currentStage: "Generation failed",
+                helperText: "The provider could not process this image.",
+                errorMessage:
+                  error instanceof Error
+                    ? error.message
+                    : "The provider could not process this image.",
+                lastPolledAt: Date.now(),
+              } satisfies GenerationJob;
+            }
+
             return {
               ...job,
-              helperText:
-                error instanceof Error
-                  ? `${error.message} Retrying...`
-                  : "Reconnecting to the generation service...",
+              helperText: `${getRemoteGenerationErrorInfo(error).message} Retrying...`,
               lastPolledAt: Date.now(),
             } satisfies GenerationJob;
           }
@@ -311,32 +460,25 @@ export function AppProvider({ children }: PropsWithChildren) {
             (job) => updates.find((candidate) => candidate.id === job.id) ?? job
           )
         );
-        setHistory((currentHistory) =>
-          currentHistory.map((item) => {
-            const updatedJob = updates.find((job) => job.id === item.jobId);
+        setHistory((currentHistory) => {
+          let nextHistory = keepCompletedHistory(currentHistory);
 
-            if (!updatedJob) {
-              return item;
+          updates.forEach((updatedJob) => {
+            if (updatedJob.status !== "completed") {
+              return;
             }
 
-            if (updatedJob.status === "completed") {
-              return buildCompletedHistoryItem(updatedJob);
-            }
+            setCompletedJobIds((ids) =>
+              ids.includes(updatedJob.id) ? ids : [...ids, updatedJob.id]
+            );
+            nextHistory = upsertCompletedHistoryItem(
+              nextHistory,
+              buildCompletedHistoryItem(updatedJob)
+            );
+          });
 
-            if (updatedJob.status === "failed") {
-              return buildFailedHistoryItem(
-                updatedJob,
-                updatedJob.errorMessage ?? "The generation failed."
-              );
-            }
-
-            return {
-              ...item,
-              previewUrl: updatedJob.previewAsset,
-              outputUrls: updatedJob.outputs,
-            };
-          })
-        );
+          return nextHistory;
+        });
       });
     } finally {
       remotePollingInFlightRef.current = false;
@@ -356,29 +498,62 @@ export function AppProvider({ children }: PropsWithChildren) {
     return () => clearInterval(timer);
   }, [bootstrapStatus, pollRemoteJobs, reconcileJobs]);
 
-  const retryBootstrap = () => {
+  const retryBootstrap = useCallback(() => {
     setBootstrapNonce((value) => value + 1);
-  };
+  }, []);
 
-  const completeOnboarding = () => {
+  const completeOnboarding = useCallback(() => {
     setOnboardingCompleted(true);
     track("onboarding_complete");
-  };
+  }, []);
 
-  const createGeneration = async (
+  const acceptAiProcessingConsent = useCallback(() => {
+    setAiProcessingConsentAccepted(true);
+    setAiProcessingConsentVisible(false);
+    track("ai_processing_consent_accept");
+  }, []);
+
+  const declineAiProcessingConsent = useCallback(() => {
+    setAiProcessingConsentAccepted(false);
+    setAiProcessingConsentVisible(true);
+    track("ai_processing_consent_decline");
+  }, []);
+
+  const openAiProcessingConsentPrompt = useCallback(() => {
+    setAiProcessingConsentVisible(true);
+    track("ai_processing_consent_open");
+  }, []);
+
+  const createGeneration = useCallback(async (
     params: CreateGenerationParams
   ): Promise<CreateGenerationResult> => {
     if (!catalog) {
       return { kind: "error", message: "App catalog is not ready yet." };
     }
 
-    const template = findTemplateById(catalog, params.templateId);
+    const template = findTemplateByIdWithContentLabFallback(
+      catalog,
+      params.templateId
+    );
 
     if (!template) {
       return { kind: "error", message: "Template not found." };
     }
 
-    const safetyError = validatePromptSafety(params.prompt);
+    const resolvedParams = {
+      ...params,
+      prompt: (params.prompt || template.defaultPrompt).trim(),
+    };
+    const modelPrompt =
+      template.modeType === "image" && resolvedParams.referenceImageUri
+        ? buildImageReferencePrompt(resolvedParams.prompt, template)
+        : template.modeType === "image"
+        ? buildImageGenerationPrompt(resolvedParams.prompt, template)
+        : resolvedParams.referenceImageUri && template.modeType === "video"
+        ? buildVideoReferencePrompt(resolvedParams.prompt)
+        : resolvedParams.prompt;
+
+    const safetyError = validatePromptSafety(resolvedParams.prompt);
 
     if (safetyError) {
       track("generate_blocked_validation", { templateId: params.templateId });
@@ -410,49 +585,83 @@ export function AppProvider({ children }: PropsWithChildren) {
     if (isLiveApiConfigured() && accountId) {
       try {
         const remoteCandidate = await createRemoteGenerationJob(
-          params,
+          {
+            ...resolvedParams,
+            modelPrompt,
+          },
           template,
           accountId
         );
 
-        setEntitlements((current) => ({
-          ...current,
-          currentCredits: current.currentCredits - template.generationCost,
-        }));
         setJobs((current) => [remoteCandidate.job, ...current]);
-        setHistory((current) => [remoteCandidate.historyItem, ...current]);
+
+        const refreshedEntitlements =
+          (await refreshRemoteEntitlements(accountId).catch(() => null)) ?? null;
+
+        if (refreshedEntitlements) {
+          setEntitlements((current) => ({
+            ...current,
+            ...refreshedEntitlements,
+            isPro: current.isPro || refreshedEntitlements.isPro,
+            subscriptionPlan:
+              refreshedEntitlements.subscriptionPlan ?? current.subscriptionPlan,
+          }));
+        } else {
+          setEntitlements((current) => ({
+            ...current,
+            currentCredits: current.currentCredits - template.generationCost,
+          }));
+        }
 
         return {
           kind: "success",
           jobId: remoteCandidate.job.id,
         };
       } catch (error) {
-        const message =
-          error instanceof Error
-            ? error.message
-            : "Failed to start generation with the live backend.";
+        if (error instanceof ApiError && error.code === "CREDIT_LIMIT_EXCEEDED") {
+          track("paywall_source_open", {
+            source_context: "credit_limit",
+            selected_template: template.id,
+          });
+          return { kind: "paywall", source: "credit_limit" };
+        }
 
-        return { kind: "error", message };
+        const errorInfo = getRemoteGenerationErrorInfo(error);
+
+        return {
+          kind: "error",
+          message: errorInfo.message,
+          temporaryBackendUnavailable: errorInfo.temporaryBackendUnavailable,
+        };
       }
     }
 
-    const job = createGenerationJob(params, template);
-    const pendingHistoryItem = buildProcessingHistoryItem(job);
+    const job = createGenerationJob(
+      {
+        ...resolvedParams,
+        modelPrompt,
+      },
+      template
+    );
 
     setEntitlements((current) => ({
       ...current,
       currentCredits: current.currentCredits - template.generationCost,
     }));
     setJobs((current) => [job, ...current]);
-    setHistory((current) => [pendingHistoryItem, ...current]);
 
     return {
       kind: "success",
       jobId: job.id,
     };
-  };
+  }, [
+    accountId,
+    catalog,
+    entitlements.currentCredits,
+    entitlements.isPro,
+  ]);
 
-  const retryGeneration = async (jobId: string) => {
+  const retryGeneration = useCallback(async (jobId: string) => {
     const originalJob = jobs.find((item) => item.id === jobId);
 
     if (!originalJob) {
@@ -464,10 +673,12 @@ export function AppProvider({ children }: PropsWithChildren) {
       prompt: originalJob.prompt,
       referenceImageUri: originalJob.referenceImageUri,
       ratio: originalJob.ratio,
+      resolution: originalJob.resolution,
+      outputCount: originalJob.outputCount,
     });
-  };
+  }, [createGeneration, jobs]);
 
-  const purchasePlan = async (planId: string) => {
+  const purchasePlan = useCallback(async (planId: string) => {
     if (!catalog) {
       throw new Error("Catalog is not ready yet.");
     }
@@ -498,9 +709,49 @@ export function AppProvider({ children }: PropsWithChildren) {
     setEntitlements(nextEntitlements);
     pushToast("Subscription unlocked.");
     track("purchase_success", { selected_plan: planId });
-  };
+  }, [accountId, catalog, entitlements, pushToast]);
 
-  const restorePurchases = async () => {
+  const purchaseExitOfferAction = useCallback(async () => {
+    if (!catalog) {
+      throw new Error("Catalog is not ready yet.");
+    }
+
+    const offer = catalog.exitOffer;
+
+    track("purchase_started", {
+      selected_plan: offer.id,
+      purchase_kind: "exit_offer",
+    });
+    const purchasedEntitlements = await purchaseExitOffer(
+      offer,
+      accountId,
+      entitlements
+    );
+    const refreshedEntitlements =
+      (await refreshRemoteEntitlements(accountId).catch(() => null)) ?? null;
+    const nextEntitlements = refreshedEntitlements
+      ? ({
+          ...purchasedEntitlements,
+          ...refreshedEntitlements,
+          currentCredits: Math.max(
+            purchasedEntitlements.currentCredits,
+            refreshedEntitlements.currentCredits
+          ),
+          isPro: purchasedEntitlements.isPro || refreshedEntitlements.isPro,
+          subscriptionPlan:
+            refreshedEntitlements.subscriptionPlan ??
+            purchasedEntitlements.subscriptionPlan,
+        } satisfies AppEntitlements)
+      : purchasedEntitlements;
+    setEntitlements(nextEntitlements);
+    pushToast(`${offer.tokenGrant} credits added.`);
+    track("purchase_success", {
+      selected_plan: offer.id,
+      purchase_kind: "exit_offer",
+    });
+  }, [accountId, catalog, entitlements, pushToast]);
+
+  const restorePurchases = useCallback(async () => {
     track("restore_tap");
     const restoredEntitlements = await restoreSubscription(accountId, entitlements);
     await notifyRestorePurchases(accountId).catch(() => null);
@@ -518,64 +769,208 @@ export function AppProvider({ children }: PropsWithChildren) {
     setEntitlements(nextEntitlements);
     pushToast("Purchases restored.");
     track("restore_success");
-  };
+  }, [accountId, entitlements, pushToast]);
 
-  const setNotificationsEnabled = (enabled: boolean) => {
+  const setNotificationsEnabled = useCallback((enabled: boolean) => {
     setSettings((current) => ({
       ...current,
       notificationsEnabled: enabled,
     }));
     track("settings_notifications_toggle", { enabled });
-  };
+  }, []);
 
-  const markVideoGuidelinesSeen = () => {
+  const markVideoGuidelinesSeen = useCallback(() => {
     setSettings((current) => ({
       ...current,
       videoGuidelinesSeen: true,
     }));
-  };
+  }, []);
 
-  const deleteHistoryItem = (id: string) => {
-    setHistory((current) => current.filter((item) => item.id !== id));
+  const deleteHistoryItem = useCallback((id: string) => {
+    setHistory((current) => {
+      const item = current.find((entry) => entry.id === id);
+
+      if (item) {
+        setCompletedJobIds((ids) =>
+          ids.filter((jobId) => jobId !== item.jobId)
+        );
+      }
+
+      return current.filter((entry) => entry.id !== id);
+    });
     track("result_delete_tap", { history_id: id });
-  };
+  }, []);
+
+  const isJobReady = useCallback(
+    (jobId: string) =>
+      completedJobIds.includes(jobId) ||
+      history.some(
+        (item) => item.jobId === jobId && item.status === "completed"
+      ),
+    [completedJobIds, history]
+  );
+
+  const historyFeed = useMemo(() => {
+    const activeItems = jobs
+      .map((job) => ({
+        job,
+        snapshot: deriveGenerationSnapshot(job),
+      }))
+      .filter(({ job, snapshot }) => {
+        if (job.status === "failed") {
+          return false;
+        }
+
+        return snapshot.status !== "completed" && snapshot.status !== "failed";
+      })
+      .map(({ job }) => buildProcessingHistoryItem(job));
+
+    const completedItems = history.filter(
+      (item) => !activeItems.some((activeItem) => activeItem.jobId === item.jobId)
+    );
+
+    return [...activeItems, ...completedItems].sort(compareHistoryFeed);
+  }, [history, jobs]);
+
+  const catalogContextValue = useMemo(
+    () => ({
+      bootstrapStatus,
+      bootstrapError,
+      catalog,
+      accountId,
+      onboardingCompleted,
+      aiProcessingConsentAccepted,
+      aiProcessingConsentVisible,
+      retryBootstrap,
+      completeOnboarding,
+      acceptAiProcessingConsent,
+      declineAiProcessingConsent,
+      openAiProcessingConsentPrompt,
+    }),
+    [
+      accountId,
+      acceptAiProcessingConsent,
+      aiProcessingConsentAccepted,
+      aiProcessingConsentVisible,
+      bootstrapError,
+      bootstrapStatus,
+      catalog,
+      completeOnboarding,
+      declineAiProcessingConsent,
+      openAiProcessingConsentPrompt,
+      onboardingCompleted,
+      retryBootstrap,
+    ]
+  );
+
+  const entitlementsContextValue = useMemo(
+    () => ({
+      entitlements,
+      settings,
+      purchasePlan,
+      purchaseExitOffer: purchaseExitOfferAction,
+      restorePurchases,
+      setNotificationsEnabled,
+      markVideoGuidelinesSeen,
+    }),
+    [
+      entitlements,
+      markVideoGuidelinesSeen,
+      purchaseExitOfferAction,
+      purchasePlan,
+      restorePurchases,
+      setNotificationsEnabled,
+      settings,
+    ]
+  );
+
+  const generationContextValue = useMemo(
+    () => ({
+      history,
+      historyFeed,
+      jobs,
+      createGeneration,
+      retryGeneration,
+      deleteHistoryItem,
+      isJobReady,
+    }),
+    [
+      createGeneration,
+      deleteHistoryItem,
+      history,
+      historyFeed,
+      isJobReady,
+      jobs,
+      retryGeneration,
+    ]
+  );
+
+  const toastContextValue = useMemo(
+    () => ({
+      toasts,
+      pushToast,
+      dismissToast,
+    }),
+    [dismissToast, pushToast, toasts]
+  );
 
   return (
-    <AppContext.Provider
-      value={{
-        bootstrapStatus,
-        bootstrapError,
-        catalog,
-        accountId,
-        onboardingCompleted,
-        entitlements,
-        settings,
-        history,
-        jobs,
-        toasts,
-        retryBootstrap,
-        completeOnboarding,
-        createGeneration,
-        retryGeneration,
-        purchasePlan,
-        restorePurchases,
-        setNotificationsEnabled,
-        markVideoGuidelinesSeen,
-        pushToast,
-        dismissToast,
-        deleteHistoryItem,
-      }}
-    >
-      {children}
-    </AppContext.Provider>
+    <CatalogContext.Provider value={catalogContextValue}>
+      <EntitlementsContext.Provider value={entitlementsContextValue}>
+        <GenerationContext.Provider value={generationContextValue}>
+          <ToastContext.Provider value={toastContextValue}>
+            {children}
+          </ToastContext.Provider>
+        </GenerationContext.Provider>
+      </EntitlementsContext.Provider>
+    </CatalogContext.Provider>
   );
 }
 
 export function useAppState() {
-  const context = useContext(AppContext);
+  return {
+    ...useCatalogState(),
+    ...useEntitlementsState(),
+    ...useGenerationState(),
+    ...useToastState(),
+  };
+}
+
+export function useCatalogState() {
+  const context = useContext(CatalogContext);
 
   if (!context) {
-    throw new Error("useAppState must be used inside AppProvider.");
+    throw new Error("useCatalogState must be used inside AppProvider.");
+  }
+
+  return context;
+}
+
+export function useEntitlementsState() {
+  const context = useContext(EntitlementsContext);
+
+  if (!context) {
+    throw new Error("useEntitlementsState must be used inside AppProvider.");
+  }
+
+  return context;
+}
+
+export function useGenerationState() {
+  const context = useContext(GenerationContext);
+
+  if (!context) {
+    throw new Error("useGenerationState must be used inside AppProvider.");
+  }
+
+  return context;
+}
+
+export function useToastState() {
+  const context = useContext(ToastContext);
+
+  if (!context) {
+    throw new Error("useToastState must be used inside AppProvider.");
   }
 
   return context;

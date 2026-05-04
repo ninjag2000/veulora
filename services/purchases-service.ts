@@ -8,7 +8,7 @@ import Purchases, {
 } from "react-native-purchases";
 
 import { appConfig, isRevenueCatMode } from "@/lib/env";
-import type { AppEntitlements, SubscriptionPlan } from "@/lib/types";
+import type { AppEntitlements, ExitOffer, SubscriptionPlan } from "@/lib/types";
 import { delay } from "@/lib/helpers";
 
 let configuredAccountId: string | null = null;
@@ -137,9 +137,50 @@ function selectPackage(
 }
 
 const creditGrants: Record<string, number> = {
-  monthly: 140,
-  yearly: 2200,
+  monthly: 300,
+  yearly: 300,
 };
+
+function getOffering(
+  offerings: Awaited<ReturnType<typeof Purchases.getOfferings>>,
+  offeringId?: string
+) {
+  return (
+    (offeringId
+      ? offerings.all[offeringId]
+      : offerings.all[appConfig.revenueCatOfferingId]) ?? offerings.current
+  );
+}
+
+function selectExitOfferPackage(
+  offering: PurchasesOffering,
+  offer: ExitOffer
+): PurchasesPackage | null {
+  if (offer.productId) {
+    const match = offering.availablePackages.find(
+      (item) => item.product.identifier === offer.productId
+    );
+    if (match) {
+      return match;
+    }
+  }
+
+  if (offer.packageType) {
+    return getPackageByType(offering, offer.packageType) ?? null;
+  }
+
+  return null;
+}
+
+function getExitOfferSubscriptionPlanId(offer: ExitOffer) {
+  const isRecurringOffer = offer.packageType === PACKAGE_TYPE.MONTHLY;
+
+  if (!isRecurringOffer) {
+    return null;
+  }
+
+  return offer.planId ?? offer.id;
+}
 
 export async function purchaseSubscription(
   plan: SubscriptionPlan,
@@ -165,10 +206,7 @@ export async function purchaseSubscription(
   }
 
   const offerings = await Purchases.getOfferings();
-  const offering =
-    (plan.offeringId
-      ? offerings.all[plan.offeringId]
-      : offerings.all[appConfig.revenueCatOfferingId]) ?? offerings.current;
+  const offering = getOffering(offerings, plan.offeringId);
 
   if (!offering) {
     throw new Error("No RevenueCat offering is available for this paywall.");
@@ -182,6 +220,62 @@ export async function purchaseSubscription(
 
   const result = await Purchases.purchasePackage(selectedPackage);
   return applyCustomerInfo(current, result.customerInfo, plan.id);
+}
+
+export async function purchaseExitOffer(
+  offer: ExitOffer,
+  accountId: string,
+  current: AppEntitlements
+) {
+  if (isRevenueCatMode() && !hasRevenueCatConfig()) {
+    throw new Error(
+      "RevenueCat purchase mode is enabled but the platform API key is missing."
+    );
+  }
+
+  const configured = await configurePurchases(accountId);
+
+  if (!configured) {
+    await delay(1100);
+    const exitOfferPlanId = getExitOfferSubscriptionPlanId(offer);
+    return {
+      ...current,
+      currentCredits: current.currentCredits + offer.tokenGrant,
+      isPro: offer.grantsPro ? true : current.isPro,
+      subscriptionPlan:
+        (offer.grantsPro && offer.planId) ||
+        exitOfferPlanId ||
+        current.subscriptionPlan,
+    } satisfies AppEntitlements;
+  }
+
+  const offerings = await Purchases.getOfferings();
+  const offering = getOffering(offerings, offer.offeringId);
+
+  if (!offering) {
+    throw new Error("No RevenueCat offering is available for this exit offer.");
+  }
+
+  const selectedPackage = selectExitOfferPackage(offering, offer);
+
+  if (!selectedPackage) {
+    throw new Error(
+      "Exit offer token pack is not configured in RevenueCat yet."
+    );
+  }
+
+  await Purchases.purchasePackage(selectedPackage);
+  const exitOfferPlanId = getExitOfferSubscriptionPlanId(offer);
+
+  return {
+    ...current,
+    currentCredits: current.currentCredits + offer.tokenGrant,
+    isPro: offer.grantsPro ? true : current.isPro,
+    subscriptionPlan:
+      (offer.grantsPro && offer.planId) ||
+      exitOfferPlanId ||
+      current.subscriptionPlan,
+  } satisfies AppEntitlements;
 }
 
 export async function restoreSubscription(

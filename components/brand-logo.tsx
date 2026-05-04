@@ -5,10 +5,82 @@ import { theme } from "@/lib/theme";
 
 interface BrandLogoProps {
   large?: boolean;
+  compact?: boolean;
+  prominent?: boolean;
   showCaption?: boolean;
 }
 
-export function BrandLogo({ large = false, showCaption = false }: BrandLogoProps) {
+export function BrandLogo({
+  large = false,
+  compact = false,
+  prominent = false,
+  showCaption = false,
+}: BrandLogoProps) {
+  const brandText = "STUDIOBLOOM";
+  const variant = prominent
+    ? "prominent"
+    : compact
+    ? "compact"
+    : large
+    ? "large"
+    : "default";
+  const horizontalPadding =
+    variant === "prominent"
+      ? 28
+      : variant === "large"
+      ? 22
+      : variant === "compact"
+      ? 12
+      : 16;
+  const verticalPadding =
+    variant === "prominent"
+      ? 15
+      : variant === "large"
+      ? 12
+      : variant === "compact"
+      ? 7
+      : 8;
+  const minWidth =
+    variant === "prominent"
+      ? 214
+      : variant === "large"
+      ? 180
+      : variant === "compact"
+      ? 118
+      : 112;
+  const fontSize =
+    brandText.length > 8
+      ? variant === "prominent"
+        ? 17
+        : variant === "large"
+        ? 15
+        : variant === "compact"
+        ? 9
+        : 10
+      : variant === "prominent"
+      ? 20
+      : variant === "large"
+      ? 18
+      : variant === "compact"
+      ? 11
+      : 12;
+  const letterSpacing =
+    brandText.length > 8
+      ? variant === "prominent"
+        ? 3
+        : variant === "large"
+        ? 2.4
+        : variant === "compact"
+        ? 1.6
+        : 2.2
+      : variant === "prominent"
+      ? 4
+      : variant === "large"
+      ? 3.4
+      : variant === "compact"
+      ? 2.6
+      : 3.4;
+
   return (
     <View style={{ alignItems: "center", gap: 6 }}>
       <LinearGradient
@@ -16,12 +88,15 @@ export function BrandLogo({ large = false, showCaption = false }: BrandLogoProps
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={{
-          paddingHorizontal: large ? 22 : 16,
-          paddingVertical: large ? 12 : 8,
+          paddingHorizontal: horizontalPadding,
+          paddingVertical: verticalPadding,
           borderRadius: theme.radii.pill,
           borderWidth: 1,
-          borderColor: "rgba(255, 255, 255, 0.12)",
-          minWidth: large ? 180 : 112,
+          borderColor:
+            variant === "prominent"
+              ? "rgba(255, 247, 237, 0.24)"
+              : "rgba(255, 255, 255, 0.12)",
+          minWidth,
           alignItems: "center",
           justifyContent: "center",
           boxShadow: theme.shadows.glow,
@@ -31,12 +106,12 @@ export function BrandLogo({ large = false, showCaption = false }: BrandLogoProps
           selectable
           style={{
             color: theme.colors.text.primary,
-            fontSize: large ? 18 : 12,
-            fontWeight: "800",
-            letterSpacing: 3.4,
+            fontSize,
+            fontWeight: variant === "prominent" ? "900" : "800",
+            letterSpacing,
           }}
         >
-          VELOURA
+          {brandText}
         </Text>
       </LinearGradient>
 
