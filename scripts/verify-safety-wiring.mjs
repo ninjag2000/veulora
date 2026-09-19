@@ -86,6 +86,42 @@ const expressRetry = sliceFunction(
 assert.match(expressRetry, /assertGenerationPromptSafety\([\s\S]*originalPrompt \?\? record\.requestContext\.prompt/);
 assert.match(expressRetry, /appendContentSafetyInstruction/);
 
+const expressPoll = sliceFunction(
+  express,
+  'app.get("/generation/:jobId"',
+  "app.use((error",
+);
+assert.match(expressPoll, /record\.terminalResponse/);
+assert.ok(
+  expressPoll.indexOf("record.terminalResponse") <
+    expressPoll.indexOf("fal.queue.status"),
+  "Express must short-circuit persisted moderation terminal responses",
+);
+assert.match(expressPoll, /await moderateGeneratedOutputs\(mode, outputs\)/);
+assert.ok(
+  expressPoll.indexOf("await moderateGeneratedOutputs(mode, outputs)") <
+    expressPoll.indexOf('status: "completed"'),
+  "Express must moderate outputs before returning completed",
+);
+assert.match(expressPoll, /refundFailedGenerationCredits/);
+
+assert.match(edge, /outputModeration\?: OutputModerationSummary/);
+assert.match(edge, /async function persistOutputModerationSummary/);
+assert.match(edge, /async function failUnsafeGeneratedOutputs[\s\S]*refundFailedGenerationCredits/);
+assert.ok(
+  (edge.match(/await moderateGeneratedOutputs\(data\.mode, outputs\)/g) ?? []).length >= 2,
+  "Edge normal webhook and polling completion must moderate outputs",
+);
+assert.ok(
+  (edge.match(/await moderateGeneratedOutputs\("image", outputs\)/g) ?? []).length >= 2,
+  "Edge pack webhook and polling completion must moderate frames before accumulation",
+);
+assert.match(
+  edge,
+  /const storedTerminalResponse = getStoredGenerationResponse\(data, jobId\);[\s\S]*if \(storedTerminalResponse\)[\s\S]*return storedTerminalResponse/,
+  "Edge polling must short-circuit persisted terminal state",
+);
+
 for (const source of [edge, express]) {
   assert.match(
     source,
