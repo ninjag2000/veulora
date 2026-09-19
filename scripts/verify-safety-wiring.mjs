@@ -27,6 +27,12 @@ assert.ok(
   "Edge must validate text before consuming credits",
 );
 assert.match(edgeCreate, /appendContentSafetyInstruction\(body\.prompt\)/);
+assert.match(edgeCreate, /await moderateUploadedReferenceUrls\(/);
+assert.ok(
+  edgeCreate.indexOf("await moderateUploadedReferenceUrls(") <
+    edgeCreate.indexOf("consumeGenerationCredits("),
+  "Edge must moderate uploaded references before consuming credits",
+);
 
 const expressImage = sliceFunction(
   express,
@@ -39,6 +45,12 @@ assert.ok(
   "Express image route must validate text before consuming credits",
 );
 assert.match(expressImage, /appendContentSafetyInstruction\(prompt\)/);
+assert.match(expressImage, /await moderateUploadedReferenceUrls\(/);
+assert.ok(
+  expressImage.indexOf("await moderateUploadedReferenceUrls(") <
+    expressImage.indexOf("consumeCredits("),
+  "Express image route must moderate references before consuming credits",
+);
 
 const expressVideo = sliceFunction(
   express,
@@ -51,6 +63,12 @@ assert.ok(
   "Express video route must validate text before consuming credits",
 );
 assert.match(expressVideo, /appendContentSafetyInstruction\(prompt\)/);
+assert.match(expressVideo, /await moderateUploadedReferenceUrls\(/);
+assert.ok(
+  expressVideo.indexOf("await moderateUploadedReferenceUrls(") <
+    expressVideo.indexOf("consumeCredits("),
+  "Express video route must moderate references before consuming credits",
+);
 
 const edgeRetry = sliceFunction(
   edge,
@@ -75,6 +93,12 @@ for (const source of [edge, express]) {
     "Safety instruction helper must avoid duplicate instructions on retries",
   );
   assert.match(source, /CONTENT_SAFETY_BLOCKED/);
+  assert.match(
+    source,
+    /async function moderateUploadedReferenceUrls\([\s\S]*Promise\.all\([\s\S]*moderateImageUrl/,
+    "Every uploaded reference must be moderated",
+  );
+  assert.match(source, /CONTENT_SAFETY_UNAVAILABLE/);
 }
 
 console.log("Safety wiring verified.");
