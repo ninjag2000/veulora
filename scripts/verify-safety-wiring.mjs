@@ -3,6 +3,17 @@ import { readFile } from "node:fs/promises";
 
 const edge = await readFile("supabase/functions/generation/index.ts", "utf8");
 const express = await readFile("server/index.js", "utf8");
+const provider = await readFile("providers/app-provider.tsx", "utf8");
+const photoGenerator = await readFile("screens/photo-generator-screen.tsx", "utf8");
+const videoGenerator = await readFile("screens/video-generator-screen.tsx", "utf8");
+const safetyPolicyModal = await readFile(
+  "components/safety-policy-modal.tsx",
+  "utf8",
+);
+const uploadFirstControls = await readFile(
+  "components/upload-first-controls.tsx",
+  "utf8",
+);
 
 function sliceFunction(source, startMarker, endMarker) {
   const start = source.indexOf(startMarker);
@@ -136,5 +147,40 @@ for (const source of [edge, express]) {
   );
   assert.match(source, /CONTENT_SAFETY_UNAVAILABLE/);
 }
+
+const remoteErrorMapper = sliceFunction(
+  provider,
+  "function getRemoteGenerationErrorInfo(error: unknown)",
+  "interface AppContextValue",
+);
+assert.match(remoteErrorMapper, /error\.code === "CONTENT_SAFETY_BLOCKED"/);
+assert.match(
+  remoteErrorMapper,
+  /This request cannot be generated under StudioBloom's safety policy\./,
+);
+assert.match(remoteErrorMapper, /error\.code === "CONTENT_SAFETY_UNAVAILABLE"/);
+assert.match(
+  remoteErrorMapper,
+  /Safety checks are temporarily unavailable\. No credits were charged\. Try again later\./,
+);
+assert.ok(
+  remoteErrorMapper.indexOf('error.code === "CONTENT_SAFETY_UNAVAILABLE"') <
+    remoteErrorMapper.indexOf("isTemporaryBackendUnavailableError(error)"),
+  "Safety availability errors must bypass the generic backend warning path",
+);
+assert.doesNotMatch(remoteErrorMapper, /matched(?:Term|Category|_term|_category)/i);
+
+for (const source of [photoGenerator, videoGenerator]) {
+  assert.match(source, /SafetyPolicyModal/);
+  assert.match(source, /SafetyPolicyAction/);
+  assert.match(source, /Keyboard\.dismiss\(\)/);
+}
+
+assert.match(uploadFirstControls, /Safety policy/);
+assert.match(safetyPolicyModal, /Allowed uses/);
+assert.match(safetyPolicyModal, /Not allowed/);
+assert.match(safetyPolicyModal, /https:\/\/hollybit\.app\/support/);
+assert.match(safetyPolicyModal, /https:\/\/hollybit\.app\/privacy/);
+assert.doesNotMatch(safetyPolicyModal, /keyword|matched term|matched category/i);
 
 console.log("Safety wiring verified.");
