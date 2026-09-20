@@ -1,4 +1,8 @@
 import { bootstrapPayload, templates } from "@/lib/mock-data";
+import {
+  filterSafeCatalog,
+  isRestrictedPresetId,
+} from "@/lib/catalog-safety";
 import type { BootstrapPayload, Template, TemplateMode } from "@/lib/types";
 
 function normalizePresetIdParts(id: string) {
@@ -43,19 +47,20 @@ export function isVideoContentLabPresetId(id: string | null | undefined) {
 }
 
 export function getAllTemplates(catalog: BootstrapPayload) {
+  const safeCatalog = filterSafeCatalog(catalog);
   const seen = new Map<string, Template>();
 
-  for (const item of catalog.imageSections.flatMap((section) => section.items)) {
+  for (const item of safeCatalog.imageSections.flatMap((section) => section.items)) {
     seen.set(item.id, item);
   }
 
-  for (const item of catalog.videoSections.flatMap((section) => section.items)) {
+  for (const item of safeCatalog.videoSections.flatMap((section) => section.items)) {
     seen.set(item.id, item);
   }
 
-  const featured = catalog.imageSections
+  const featured = safeCatalog.imageSections
     .flatMap((section) => section.items)
-    .find((item) => item.id === catalog.featuredBanner.presetId);
+    .find((item) => item.id === safeCatalog.featuredBanner.presetId);
 
   if (featured) {
     seen.set(featured.id, featured);
@@ -65,6 +70,10 @@ export function getAllTemplates(catalog: BootstrapPayload) {
 }
 
 export function findTemplateById(catalog: BootstrapPayload, id: string) {
+  if (isRestrictedPresetId(id)) {
+    return undefined;
+  }
+
   return getAllTemplates(catalog).find((item) => item.id === id);
 }
 
@@ -115,11 +124,15 @@ export function findTemplateByIdWithContentLabFallback(
 }
 
 export function findVideoSectionBySlug(catalog: BootstrapPayload, slug: string) {
-  return catalog.videoSections.find((section) => section.seeAllSlug === slug);
+  return filterSafeCatalog(catalog).videoSections.find(
+    (section) => section.seeAllSlug === slug
+  );
 }
 
 export function findImageSectionBySlug(catalog: BootstrapPayload, slug: string) {
-  return catalog.imageSections.find((section) => section.seeAllSlug === slug);
+  return filterSafeCatalog(catalog).imageSections.find(
+    (section) => section.seeAllSlug === slug
+  );
 }
 
 export function findPlanById(catalog: BootstrapPayload, id: string) {
