@@ -148,6 +148,23 @@ for (const source of [edge, express]) {
   assert.match(source, /CONTENT_SAFETY_UNAVAILABLE/);
 }
 
+assert.match(
+  edge,
+  /moderateUploadedReferenceUrls\([\s\S]*body\.styleReferenceUrl[\s\S]*body\.compositionReferenceUrl/,
+  "Edge must moderate style and composition references",
+);
+for (const referenceName of ["styleReferenceUrl", "compositionReferenceUrl"]) {
+  assert.ok(
+    express.match(
+      new RegExp(
+        `moderateUploadedReferenceUrls\\(\\[[\\s\\S]*?${referenceName}[\\s\\S]*?\\]\\);`,
+        "g",
+      ),
+    )?.length >= 2,
+    `Express image and video routes must moderate ${referenceName}`,
+  );
+}
+
 const remoteErrorMapper = sliceFunction(
   provider,
   "function getRemoteGenerationErrorInfo(error: unknown)",

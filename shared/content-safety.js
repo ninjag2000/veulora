@@ -24,6 +24,8 @@ const RAW_POLICIES = [
     patterns: [
       /\b(?:sexuali[sz](?:e|ed)|nude|naked|explicit)\s+(?:child|kid|minor|schoolgirl|schoolboy|teen(?:ager)?)s?\b/u,
       /\b(?:child|kid|minor|schoolgirl|schoolboy|teen(?:ager)?)s?\s+(?:nude|naked|porn|sexual|explicit)\b/u,
+      /\b(?:sexuali[sz](?:e|ed)|nude|naked|explicit)\s+underage\b/u,
+      /\bunderage\s+(?:nude|naked|porn|sexual|explicit)\b/u,
       /\b(?:обнажен\w*|сексуал\w*|интимн\w*)\s+(?:несовершеннолетн\w*|ребен\w*|дет\w*)\b/u,
       /\b(?:несовершеннолетн\w*|ребен\w*|дет\w*)\s+(?:обнажен\w*|сексуал\w*|интимн\w*)\b/u,
     ],
@@ -34,13 +36,16 @@ const RAW_POLICIES = [
       /\bnon\s+consensual\b/u,
       /\bwithout\s+(?:their|his|her)?\s*consent\b/u,
       /\bdeepfake\s+(?:porn|nude|sex)\b/u,
+      /\b(?:rape|sexual\s+assault)\b/u,
       /\b(?:без\s+согласия|несогласованн\w*|интимн\w*\s+дипфейк)\b/u,
+      /\b(?:изнасилован\w*|сексуальн\w*\s+насили\w*)\b/u,
     ],
   },
   {
     category: "sexual_content",
     patterns: [
       /\b(?:nude|nudity|naked|topless|porn|pornographic|explicit\s+sex|erotic|fetish)\b/u,
+      /\b(?:sex\s+scene|sexual\s+act|sexual\s+intercourse)\b/u,
       /\b(?:remove|take\s+off)\s+(?:her\s+|his\s+|their\s+)?clothes\b/u,
       /\b(?:обнажен\w*|голая|голый|эротическ\w*|порнограф\w*|фетиш\w*)\b/u,
       /\b(?:снять|убрать)\s+одежд\w*\b/u,
@@ -51,6 +56,8 @@ const RAW_POLICIES = [
     category: "graphic_violence",
     patterns: [
       /\b(?:gore|gory|dismember(?:ed|ment)?|decapitat(?:e|ed|ion)|mutilat(?:e|ed|ion)|graphic\s+violence)\b/u,
+      /\b(?:murder|execution)\s+scene\b/u,
+      /\b(?:bloody|mutilated)\s+(?:body|corpse)\b/u,
       /\b(?:расчленен\w*|обезглавлен\w*|изувечен\w*|окровавленн\w*|графическ\w*\s+насили\w*)\b/u,
     ],
   },
@@ -58,7 +65,9 @@ const RAW_POLICIES = [
     category: "self_harm",
     patterns: [
       /\b(?:suicide|suicidal|self\s+harm|selfharm|cutting\s+(?:herself|himself|themselves))\b/u,
+      /\b(?:cut|cutting|slice|slicing)\s+(?:their|his|her)?\s*wrists?\b/u,
       /\b(?:суицид\w*|самоубийств\w*|самоповрежден\w*)\b/u,
+      /\b(?:режет|порезать|перерезать)\s+(?:себе\s+)?вен\w*\b/u,
     ],
   },
   {
@@ -83,6 +92,7 @@ const RAW_POLICIES = [
     category: "drugs_tobacco",
     patterns: [
       /\b(?:using|taking|snorting|injecting|smoking|selling|advertising|promoting)\s+(?:cocaine|heroin|meth|methamphetamine|fentanyl|tobacco|cigarettes?)\b/u,
+      /\b(?:using|taking|smoking|selling|advertising|promoting)\s+(?:marijuana|cannabis)\b/u,
       /\b(?:употреблен\w*|продаж\w*|реклам\w*|пропаганд\w*)\s+(?:кокаин\w*|героин\w*|метамфетамин\w*|фентанил\w*|табак\w*|сигарет\w*)\b/u,
     ],
   },
